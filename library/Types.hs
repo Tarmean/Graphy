@@ -29,7 +29,7 @@ type Matcher g = NodeMatcher (GetLabel (NodeData g))
 data NodeMatcher a
     = NodeMatcher 
     { parent :: Maybe Node
-    , label :: a
+    , matcherLabel :: a
     , constraints :: [Constraint]
     }
 data Constraint = Degree !Int | HasEdge !Node
@@ -44,7 +44,7 @@ data MstEnv g
 makeFields ''MstEnv
 
 newtype MstMonad g a = MstMonad (State (MstEnv g) a) deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
-type MST g a = (Dyn g, WeightedGraph g, HasLabel (NodeData g), HasLabel (EdgeData g)) => MstMonad g a
+type MST g a = (WeightedGraph g) => MstMonad g a
 
 type PatternNode = G.Node 
 type GraphNode = G.Node 
@@ -60,7 +60,7 @@ makeFields ''QuickSIEnv
 newtype Alg s g a
     = Alg (ReaderT (QuickSIEnv s g) (L.LogicT (ST s)) a)
     deriving (Functor, Applicative, Monad, MonadReader (QuickSIEnv s g), Alternative, MonadPlus)
-type ALG s g a = (Graphy g, HasLabel (NodeData g), HasLabel (EdgeData g)) => Alg s g a
+type ALG s g a = (Graph g) => Alg s g a
 
 liftST :: ST s a -> Alg s g a
 liftST = Alg . lift . lift

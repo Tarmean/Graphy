@@ -34,7 +34,7 @@ candidates = do
     guard (not nodeUsed)
 
     curLabel <- lookupLabel node
-    guard (curLabel == label matcher)
+    guard (curLabel == matcherLabel matcher)
 
     g <- view graph
     let
@@ -62,7 +62,7 @@ checkDone = do
 allNodes :: ALG s g GraphNode
 allNodes = liftLs =<< view (graph . to G.nodes)
 
-neighbors :: (Graphy g) => GraphNode -> Alg s g GraphNode
+neighbors :: (Graph g) => GraphNode -> Alg s g GraphNode
 neighbors node = do 
     curGraph <- view graph
     liftLs $ G.neighbors curGraph node
@@ -72,7 +72,7 @@ lookupLabel :: GraphNode -> ALG s g (GetLabel (NodeData g))
 lookupLabel node = do
     curGraph <- view graph
     Just lbl <- pure $ G.lab curGraph node
-    return (getLabel lbl)
+    return (lbl ^. label)
 
 readMVec :: (VU.Unbox a) => VU.MVector s a -> Int -> Alg s g a
 readMVec vec i = liftST (vec `VM.read` i)

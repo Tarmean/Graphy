@@ -60,7 +60,7 @@ selectSpanningEdge g seen
     induced (_,toN,_) = O.Down $ G.order (G.subgraph nodes g)
       where nodes = S.toList (S.insert toN seen)
 
-adjacentNodes :: Graphy g => g -> S.Set PatternNode -> [AnnotatedEdge g]
+adjacentNodes :: Graph g => g -> S.Set PatternNode -> [AnnotatedEdge g]
 adjacentNodes g seen = filter isNeighbor $ G.labEdges g
   where
     isNeighbor (fromN, toN, _) = fromN `S.member` seen && toN `S.notMember` seen
@@ -71,7 +71,7 @@ makeFirstMatcher (fromN, _, _) = do
     l <- lookupLabel fromN
     return NodeMatcher
         { parent = Nothing
-        , label = l
+        , matcherLabel = l
         , constraints = addDegConstraint g fromN []
         }
 makeMatcher :: AnnotatedEdge g -> MST g (Matcher g)
@@ -82,15 +82,15 @@ makeMatcher (fromN, toN, _) = do
     l <- lookupLabel toN
     return NodeMatcher
            { parent = Just fromN 
-           , label = l
+           , matcherLabel = l
            , constraints = addDegConstraint g toN edgeConstraints
            }
 lookupLabel :: Node -> MST g (GetLabel (NodeData g))
 lookupLabel n = do
     g <- use graph
     Just l <- return (G.lab g n)
-    return (getLabel l)
-addDegConstraint :: Graphy g => g -> Node -> ([Constraint] -> [Constraint])
+    return (l ^. label)
+addDegConstraint :: Graph g => g -> Node -> ([Constraint] -> [Constraint])
 addDegConstraint g toN = if deg >= 3 then (Degree deg:) else id
   where deg = G.deg g toN
 
