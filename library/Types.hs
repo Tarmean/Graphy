@@ -23,6 +23,7 @@ import TypeHacks
 
 type AnnotatedEdge g = G.LEdge (EdgeData g)
 type WeightedEdge g = WeightedGraph g => G.LEdge (EdgeData g)
+type WithWeights g = BaseGraph g (Weighted (NodeData g)) (Weighted (EdgeData g))
 
 type Node = Int
 type Matcher g = NodeMatcher (GetLabel (NodeData g))
@@ -42,8 +43,9 @@ data MstEnv g
     , _mstEnvGraph :: g
     }
 makeFields ''MstEnv
+runMstMonad m = execState (unMST m) . MstEnv mempty mempty mempty
 
-newtype MstMonad g a = MstMonad (State (MstEnv g) a) deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
+newtype MstMonad g a = MstMonad { unMST :: State (MstEnv g) a} deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
 type MST g a = (WeightedGraph g) => MstMonad g a
 
 type PatternNode = G.Node 

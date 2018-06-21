@@ -14,6 +14,9 @@ import Control.Monad.Logic (lift, guard)
 
 import Types
 
+runMST :: (Graph g, IsUnweighted (NodeData g)) => (Node -> Node -> Double) -> (Node -> Double) -> g -> [Matcher g]
+runMST edgeWeight nodeWeight baseGraph = view matchers $ runMstMonad mst (addWeights edgeWeight nodeWeight baseGraph)
+
 mst :: MST g ()
 mst = do
     g <- use graph
@@ -57,8 +60,9 @@ selectSpanningEdge g seen
     edgeWeight = getWeight . G.edgeLabel
     outdeg (_, toN, _) = G.outdeg g toN
 
-    induced (_,toN,_) = O.Down $ G.order (G.subgraph nodes g)
+    induced (_,toN,_) = O.Down $ edgeCount (G.subgraph nodes g)
       where nodes = S.toList (S.insert toN seen)
+            edgeCount = length . G.edges
 
 adjacentNodes :: Graph g => g -> S.Set PatternNode -> [AnnotatedEdge g]
 adjacentNodes g seen = filter isNeighbor $ G.labEdges g
@@ -116,3 +120,16 @@ addEdge e@(fromN, toN, _label) = do
     matcher <- makeMatcher e
     modifying matchers (++[matcher])
     return ()
+
+addWeights :: Graph g => (Node -> Node -> Double) -> (Node -> Double) -> g -> WithWeights g
+addWeights edgeWeight nodeWeight = G.gmap step
+  where
+    step (inEdges, node, lbl, outEdges) =
+        ( map (wInEdge node) inEdges
+        , node
+        , wSelf node lbl
+        , map (wOutEdge node) outEdges
+        )
+    wInEdge node (lbl, other) = (Weighted (edgeWeight other node) lbl, other)
+    wOutEdge node (lbl, other) = (Weighted (edgeWeight node other) lbl, other)
+    wSelf node lbl = Weighted (nodeWeight node) lbl

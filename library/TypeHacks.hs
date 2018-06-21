@@ -41,6 +41,7 @@ type family GetLabel l where
     GetLabel l = l
 
 type IsWeighted a = (a ~ Weighted (GetLabel a))
+type IsUnweighted a = (a ~ GetLabel a)
 
 -- Pack `G.Graph g => g (Weighted a) (Weighted b)` into `WeightedGraph g => g`
 
