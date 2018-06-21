@@ -14,7 +14,7 @@ import Control.Lens
 import Control.Monad
 import Control.Monad.Reader
 
-algorithm :: (Eq (NodeLabel g)) => ALG s g (VU.Vector GraphNode)
+algorithm :: (Eq (GetLabel (NodeData g))) => ALG s g (VU.Vector GraphNode)
 algorithm = do
    isDone <- checkDone
    if isDone
@@ -25,7 +25,7 @@ algorithm = do
        node <- candidates
        withNode node algorithm
 
-candidates :: (Eq (NodeLabel g)) => ALG s g GraphNode
+candidates :: (Eq (GetLabel (NodeData g))) => ALG s g GraphNode
 candidates = do
     matcher <- getMatcher
     node <- availableSuccessors 
@@ -68,11 +68,11 @@ neighbors node = do
     liftLs $ G.neighbors curGraph node
 
 
-lookupLabel :: GraphNode -> ALG s g (NodeLabel g)
+lookupLabel :: GraphNode -> ALG s g (GetLabel (NodeData g))
 lookupLabel node = do
     curGraph <- view graph
     Just lbl <- pure $ G.lab curGraph node
-    return lbl
+    return (getLabel lbl)
 
 readMVec :: (VU.Unbox a) => VU.MVector s a -> Int -> Alg s g a
 readMVec vec i = liftST (vec `VM.read` i)
@@ -82,7 +82,7 @@ getParentMapping = do
     matcher <- getMatcher
     traverse lookupMapping $ parent matcher
         
-getMatcher :: Alg s g (NodeMatcher (NodeLabel g))
+getMatcher :: Alg s g (Matcher g)
 getMatcher = do
     curDepth <- view depth
     curMatchers <- view matchers

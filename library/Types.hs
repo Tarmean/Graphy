@@ -21,10 +21,11 @@ import qualified Data.Vector as VB
 
 import TypeHacks
 
-type LabeledEdge g = G.LEdge (EdgeLabel g)
-type WeightedEdge g = WeightedGraph g => G.LEdge (EdgeLabel g)
+type AnnotatedEdge g = G.LEdge (EdgeData g)
+type WeightedEdge g = WeightedGraph g => G.LEdge (EdgeData g)
 
 type Node = Int
+type Matcher g = NodeMatcher (GetLabel (NodeData g))
 data NodeMatcher a
     = NodeMatcher 
     { parent :: Maybe Node
@@ -37,13 +38,13 @@ data MstEnv g
     = MstEnv
     { _mstEnvEdges :: S.Set G.Edge
     , _mstEnvVerts :: S.Set G.Node
-    , _mstEnvMatchers :: [NodeMatcher (GetLabel (EdgeLabel g))]
+    , _mstEnvMatchers :: [Matcher g]
     , _mstEnvGraph :: g
     }
 makeFields ''MstEnv
 
 newtype MstMonad g a = MstMonad (State (MstEnv g) a) deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
-type MST g a = (Dyn g, WeightedGraph g) => MstMonad g a
+type MST g a = (Dyn g, WeightedGraph g, HasLabel (NodeData g), HasLabel (EdgeData g)) => MstMonad g a
 
 type PatternNode = G.Node 
 type GraphNode = G.Node 
@@ -53,13 +54,13 @@ data QuickSIEnv s g
     , _quickSIEnvMappings :: VU.MVector s GraphNode
     , _quickSIEnvUsed :: VU.MVector s Bool
     , _quickSIEnvDepth :: Int
-    , _quickSIEnvMatchers :: VB.Vector (NodeMatcher (NodeLabel g))
+    , _quickSIEnvMatchers :: VB.Vector (Matcher g)
     }
 makeFields ''QuickSIEnv
 newtype Alg s g a
     = Alg (ReaderT (QuickSIEnv s g) (L.LogicT (ST s)) a)
     deriving (Functor, Applicative, Monad, MonadReader (QuickSIEnv s g), Alternative, MonadPlus)
-type ALG s g a = Graphy g => Alg s g a
+type ALG s g a = (Graphy g, HasLabel (NodeData g), HasLabel (EdgeData g)) => Alg s g a
 
 liftST :: ST s a -> Alg s g a
 liftST = Alg . lift . lift
