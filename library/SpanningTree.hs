@@ -1,36 +1,55 @@
 {-# Language FlexibleContexts #-}
 {-# Language GADTs #-}
 {-# Language RankNTypes #-}
+{-# Language TypeApplications, ScopedTypeVariables #-}
 module SpanningTree where
 import qualified Data.Graph.Inductive as G
 import qualified Data.Foldable as F
 import qualified Data.Ord as O
 import qualified Data.Set as S
 import Data.Monoid ((<>))
-import Control.Monad.State
+import Control.Lens
+import qualified Control.Monad.Logic as L
+import Control.Monad.Logic (lift, guard)
 
 import Types
 
-firstEdge :: MST g (LabeledEdge g)
-firstEdge  = do
-    graph <- gets mstGraph
-    let edges = G.labEdges (graph)
-    return (selectFirstEdge graph edges)
+mst :: MST g ()
+mst = do
+    g <- use graph
+    let nodeCount = length (G.nodes g)
+    getFirstEdge >>= addFirstEdge
+    let loop = do
+        processedCount <- use (verts . to length)
+        if processedCount /= nodeCount
+        then getSpanningEdge >>= addEdge >> loop
+        else return ()
+    loop
+
+getFirstEdge :: MST g (LabeledEdge g)
+getFirstEdge  = do
+    curGraph <- use graph
+    let allEdges = G.labEdges (curGraph)
+    return (selectFirstEdge curGraph allEdges)
 
 selectFirstEdge :: (WeightedGraph g) => g -> [LabeledEdge g] -> LabeledEdge g
 selectFirstEdge g = F.minimumBy (O.comparing edgeWeight <> O.comparing combinedDeg)
  where
    edgeWeight = getWeight . G.edgeLabel
-   combinedDeg (from, to, _) = deg from + deg to
-   deg = G.outdeg (g)
+   combinedDeg (fromN, toN, _) = deg fromN + deg toN
+   deg = G.outdeg g
 
 adjacentNodes :: Graphy g => g -> S.Set PatternNode -> [LabeledEdge g]
 adjacentNodes g seen = filter isNeighbor $ G.labEdges $ g
   where
-    isNeighbor (from, to, _) = from `S.member` seen && to `S.notMember` seen
+    isNeighbor (fromN, toN, _) = fromN `S.member` seen && toN `S.notMember` seen
 
-spanningEdge :: MST g [LabeledEdge g]
-spanningEdge = adjacentNodes <$> (gets mstGraph) <*> (gets mstVerts)
+getSpanningEdge :: MST g (LabeledEdge g)
+getSpanningEdge = do 
+    curGraph <- use graph 
+    seen <- use verts
+    let candidateEdges = adjacentNodes curGraph seen
+    return (selectSpanningEdge curGraph seen candidateEdges)
 
 selectSpanningEdge :: (WeightedGraph g) => g -> S.Set PatternNode -> [LabeledEdge g] -> LabeledEdge g 
 selectSpanningEdge g seen
@@ -41,55 +60,48 @@ selectSpanningEdge g seen
         )
   where
     edgeWeight = getWeight . G.edgeLabel
-    outdeg (_, to, _) = G.outdeg (g) to
+    outdeg (_, toN, _) = G.outdeg g toN
 
-    induced (_,to,_) = G.order $ G.subgraph nodes g
-      where nodes = S.toList (S.insert to seen)
+    induced (_,toN,_) = O.Down $ G.order (G.subgraph nodes g)
+      where nodes = S.toList (S.insert toN seen)
       
     
 dropLabel :: G.LEdge l -> G.Edge
-dropLabel (from, to, _label) = (from, to)
+dropLabel (fromN, toN, _label) = (fromN, toN)
 
--- recordFirstEdge :: LabeledEdge g -> MST g ()
--- recordFirstEdge edge = do
---     -- modify' (S.insert $ dropLabel edge)
---     return ()
+makeMatcher :: LabeledEdge g -> MST g (NodeMatcher (GetLabel (EdgeLabel g)))
+makeMatcher (fromN, toN, l) = do
+    g <- use graph
+    missedEdges <- getMissedEdges toN
+    let edgeConstraints = HasEdge <$> missedEdges
+        deg = G.deg g toN
+        addDegConstraint = if deg >= 3 then (Degree deg:) else id
+    return NodeMatcher
+           { parent = Just fromN 
+           , label = getLabel l
+           , constraints = addDegConstraint edgeConstraints
+           }
 
--- mst :: forall g. (G.Graph g) => g Double Double -> _
--- mst g0 = loop g0 (S.singleton (root,first)) (S.fromList [root, first])
---   where
+getMissedEdges :: WeightedGraph g => G.Node -> MstMonad g [Node]
+getMissedEdges node = L.observeAllT $ do
+    g <- lift (use graph)
+    seen <- lift (use verts)
+    (fromN, toN, _) <- toLogicT (G.out g node)
+    guard (toN `S.member` seen)
+    lift $ modifying graph (G.delEdge  (fromN, toN))
+    return toN
+            
+    
+addFirstEdge :: LabeledEdge g -> MST g ()
+addFirstEdge e@(fromN, _, _) = do
+    addEdge e
+    modifying verts (S.insert fromN)
 
---     edges = G.labEdges g0
---
---     addSeq seq (parent, child) graph = _
---       where
---         matcher = NodeMatcher (Just parent) (G.lab graph child) constraints
-
---     minimumEdgeWeight = minimum $ thrd <$> edges
---     smallestEdges = filter ((==minimumEdgeWeight).thrd) edges
---     (root,first,l) = selectFirstEdge smallestEdges g0
-
---     selectFirstEdge :: [G.LEdge Double] -> g Double Double -> G.LEdge Double
---     selectFirstEdge = _
---     selectSpanningEdge :: [G.Edge] -> g Double Double -> S.Set PatternNode -> G.Edge
---     selectSpanningEdge candidates graph used = _
-
---         constraints
-          
---         otherEdges = [(l,r)| (l,r) <- G.edges graph, valid l r || valid r l]
---         valid l r = l == child && r `S.elem` verts
-
---     loop :: g Double Double -> S.Set (G.Edge) -> S.Set PatternNode -> _ -> _
---     loop g edges verts seq
---       | null edge_candidates = seq
---       | otherwise = loop g' edges' verts' seq'
---       where
---         edge_candidates = []
---         edge@(parent, child) = selectSpanningEdge edge_candidates g verts
-
---         g' = G.delNode child g
---         edges' = S.insert edge edges
---         verts' = S.insert child verts
---         seq' = addSeq seq edge g' verts'
-
+addEdge  :: LabeledEdge g -> MST g ()
+addEdge e@(fromN, toN, _label) = do
+    modifying verts (S.insert toN)
+    modifying edges (S.insert (fromN, toN))
+    matcher <- makeMatcher e
+    modifying matchers (++[matcher])
+    return ()
 

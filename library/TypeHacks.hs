@@ -17,6 +17,7 @@ import qualified Data.Graph.Inductive as G
 
 data Weighted a = Weighted { wWeight :: !Double, wLabel :: a }
 
+-- Pack `G.Graph g => g a b` into `Graphy g => g`
 type family NodeLabel g where
     NodeLabel (g nlbl elbl) = nlbl
 type family EdgeLabel g where
@@ -27,25 +28,21 @@ type PackedGraph g = (BaseGraph g (NodeLabel g) (EdgeLabel g) ~ g)
 type Graphy g = (G.Graph (BaseGraph g), PackedGraph g)
 type Dyn g = (G.DynGraph (BaseGraph g))
 
+-- Pack `G.Graph g => g (Weighted a) (Weighted b)` into `WeightedGraph g => g`
+type WeightedGraph g = (Dyn g, Graphy g, IsWeighted (NodeLabel g), IsWeighted (EdgeLabel g))
+
 type family GetLabel l where
     GetLabel (Weighted l) = l
     GetLabel l = l
 
 type IsWeighted a = (a ~ Weighted (GetLabel a), GetLabel (GetLabel a) ~ GetLabel a)
 
-type WeightedGraph g = (Dyn g, Graphy g, IsWeighted (NodeLabel g), IsWeighted (EdgeLabel g))
+class HasLabel l  where
+    getLabel :: l -> GetLabel l
+instance  {-# Overlapping #-} (GetLabel (Weighted l) ~ l) => HasLabel (Weighted l) where
+    getLabel (Weighted _ a) = a
+instance {-# Overlappable #-}(GetLabel l ~ l) => HasLabel l where
+    getLabel w = w
 
-type family CheckWeighted w where
-    CheckWeighted (Weighted a) = 'True
-    CheckWeighted _ = 'False
-class LabelledApp (i::Bool) l  where
-    getLabelApp :: l -> GetLabel l
-instance (GetLabel l ~ l) => LabelledApp 'False l where
-    getLabelApp w = w
-instance LabelledApp 'True (Weighted i) where
-    getLabelApp (Weighted _ a) = a
-
-getLabel :: forall l. (LabelledApp (CheckWeighted l) l) => l -> GetLabel l
-getLabel l = getLabelApp @(CheckWeighted l) l
-getWeight :: IsWeighted a => a -> Double
+getWeight :: Weighted a -> Double
 getWeight a = wWeight a
