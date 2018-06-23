@@ -14,10 +14,10 @@ import Control.Monad.ST
 import Control.Monad.Reader
 import qualified Control.Monad.Logic as L
 import Control.Lens.TH
+import qualified Data.Map as M
 
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector as VB
-
 
 import TypeHacks
 
@@ -43,6 +43,8 @@ data MstEnv g
     , _mstEnvGraph :: g
     }
 makeFields ''MstEnv
+
+runMstMonad :: MstMonad g a -> g -> MstEnv g
 runMstMonad m = execState (unMST m) . MstEnv mempty mempty mempty
 
 newtype MstMonad g a = MstMonad { unMST :: State (MstEnv g) a} deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
@@ -71,3 +73,12 @@ liftLs :: [a] -> Alg s g a
 liftLs = Alg . lift . toLogicT
 toLogicT :: [a] -> L.LogicT m a
 toLogicT ls = L.LogicT $ \cons zero -> foldr cons zero ls
+
+
+
+data GlossState g
+    = GlossState
+    { stateNodes :: M.Map G.Node (Float, Float)
+    , stateGraph :: g
+    }
+
