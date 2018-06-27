@@ -4,14 +4,26 @@ module GlossTest where
 
 import Data.Monoid
 import Types
-import Graphics.Gloss
+import Graphics.Gloss as Gr
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map as M
 import Data.Function
 
 main :: IO ()
-main = display (InWindow "Nice Window" (200, 200) (10, 10)) white (Circle 80)
+main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState render stepEvent stepTime
+  where
+    initialState = makeGraph [(0, (1, 2)), (1, (10, 10))]
+    render = drawState
+    stepEvent event state = state
+    stepTime delta state = state
 
+   
+
+makeGraph :: [(Node, Point)] -> GlossState (G.Gr () ())
+makeGraph xs =  GlossState locs graph0
+  where
+    locs = M.fromList xs
+    graph0 = G.mkGraph [(n, ()) | (n, _) <- xs] [(n, m, ()) | (n, _) <- xs, (m, _) <- xs]
 
 
 drawState :: Graph g => GlossState g -> Picture
