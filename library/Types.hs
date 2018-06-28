@@ -15,6 +15,8 @@ import Control.Monad.Reader
 import qualified Control.Monad.Logic as L
 import Control.Lens.TH
 import qualified Data.Map as M
+import Control.Lens (iso, Profunctor)
+import Graphics.Gloss.Data.ViewState
 
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector as VB
@@ -74,11 +76,12 @@ liftLs = Alg . lift . toLogicT
 toLogicT :: [a] -> L.LogicT m a
 toLogicT ls = L.LogicT $ \cons zero -> foldr cons zero ls
 
-
+type Point = (Float, Float)
 
 data GlossState g
     = GlossState
     { stateNodes :: M.Map G.Node (Float, Float)
     , stateGraph :: g
+    , viewState :: ViewState
     }
 
