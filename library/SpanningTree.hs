@@ -23,10 +23,10 @@ mst = do
     let nodeCount = length (G.nodes g)
     getFirstEdge >>= addFirstEdge
     let loop = do
-        processedCount <- use (verts . to length)
-        if processedCount /= nodeCount
-        then getSpanningEdge >>= addEdge >> loop
-        else return ()
+                processedCount <- use (verts . to length)
+                if processedCount /= nodeCount
+                then getSpanningEdge >>= addEdge >> loop
+                else return ()
     loop
 
 getFirstEdge :: MST g (AnnotatedEdge g)
@@ -60,8 +60,8 @@ selectSpanningEdge g seen
     edgeWeight = getWeight . G.edgeLabel
     outdeg (_, toN, _) = G.outdeg g toN
 
-    induced (_,toN,_) = O.Down $ edgeCount (G.subgraph nodes g)
-      where nodes = S.toList (S.insert toN seen)
+    induced (_,toN,_) = O.Down $ edgeCount (G.subgraph matchedNodes g)
+      where matchedNodes = S.toList (S.insert toN seen)
             edgeCount = length . G.edges
 
 adjacentNodes :: Graph g => g -> S.Set PatternNode -> [AnnotatedEdge g]
