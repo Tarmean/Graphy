@@ -6,12 +6,11 @@ import Data.Monoid
 import Data.List (nub, find)
 import Types
 import Graphics.Gloss as Gr hiding (Point)
-import Graphics.Gloss.Data.ViewState
+import Graphics.Gloss.Data.ViewPort
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map as M
 import Data.Function
 import Graphics.Gloss.Data.Vector
-import Graphics.Gloss.Data.ViewPort
 import Graphics.Gloss.Interface.Pure.Game
 import Control.Lens
 
@@ -23,25 +22,44 @@ main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState 
     stepEvent =  processEvent
     stepTime delta state = stepDraggedNode (stepNodes state delta)
 
-   
 processEvent :: Event -> GlossState g -> GlossState g
 processEvent (EventKey (MouseButton LeftButton) Down Modifiers {} pos) state 
     | Just (node, _) <- findNode pos state
-      = state & uiState .~ SClicked node
+      = state & uiState .~ SClickedNode node pos
+    | SBase <- state ^. uiState = state & uiState .~ STranslating pos
+processEvent (EventKey (MouseButton RightButton) Down Modifiers {} pos) state 
+    | SBase <- state ^. uiState = state & uiState .~ SScaling pos
 processEvent (EventMotion pos') state 
-    | SClicked n <- state ^. uiState = state & uiState .~ SDragging n adjustedPos
-    | SDragging n _ <- state ^. uiState = state & uiState .~ SDragging n adjustedPos
-    where adjustedPos = adjustPoint state pos'
+    | SClickedNode n pos <- state ^. uiState
+    , magV (pos - pos') >= 4
+        = state & uiState .~ SDraggingNode n adjustedPos
+    | SDraggingNode n _ <- state ^. uiState = state & uiState .~ SDraggingNode n adjustedPos
+    | STranslating origin <- state ^. uiState
+        = state
+            & viewPort . viewTranslate +~ (pos' - origin)
+            &  uiState .~ STranslating pos'
+                
+    | SScaling origin <- state ^. uiState
+        = state
+            & viewPort . viewScale +~ valV (pos' - origin)
+            & uiState .~ SScaling pos'
+    where
+      adjustedPos = adjustPoint state pos'
 
 processEvent (EventKey (MouseButton LeftButton) Up Modifiers {} _) state
-  | SClicked n <- state ^. uiState = state & uiState .~ SBase
+  | SClickedNode n _ <- state ^. uiState = state & uiState .~ SBase
                                            & selected .~ Just n
   | otherwise = state & uiState .~ SBase
+processEvent (EventKey (MouseButton RightButton) Up Modifiers {} _) state
+  | SScaling _  <- state ^. uiState = state & uiState .~ SBase
+processEvent _ s = s
 
-processEvent event state = state & viewState %~ updateViewStateWithEvent event
+valV :: Point -> Float
+valV (x, y) = (x+y) / 100
+-- processEvent event state = state & viewPort %~ updateViewStateWithEvent event
 
 adjustPoint :: GlossState g -> Point -> Point
-adjustPoint state pos = state ^. viewState . to viewStateViewPort . to invertViewPort  $ pos
+adjustPoint state pos = state ^. viewPort . to invertViewPort  $ pos
 
 findNode :: Vector -> GlossState g -> Maybe (G.Node, Float)
 findNode pos state = find inCircle $ map labelDist candidates
@@ -55,7 +73,7 @@ calcDist :: Point -> Point -> Float
 calcDist p1 p2 =  magV (p2 - p1)
 
 makeGraph :: [(Int, Int)] -> GlossState (G.Gr () ())
-makeGraph xs =  GlossState locs graph0 viewStateInit Nothing SBase
+makeGraph xs =  GlossState locs graph0 viewPortInit Nothing SBase
   where
     uniqNodes = nub $ concat [[x, y] | (x, y) <- xs]
     locs = M.fromList [(n, (fromIntegral n**3, fromIntegral n * 8)) | n <- uniqNodes]
@@ -66,7 +84,7 @@ stepNodes state delta = state & nodes %~ M.mapWithKey (stepSingle state delta)
 
 stepDraggedNode :: GlossState g -> GlossState g
 stepDraggedNode state
-  | SDragging n p <- state ^. uiState = state & nodes . ix n .~ p
+  | SDraggingNode n p <- state ^. uiState = state & nodes . ix n .~ p
   | otherwise = state
 
 
@@ -91,7 +109,7 @@ push p1 p2
 
 drawState :: Graph g => GlossState g -> Picture
 drawState =  applyPort <*> drawNodes <> drawEdges -- check if this is too cute once i am less tired
-  where applyPort = view $ viewState . to viewStateViewPort . to applyViewPortToPicture
+  where applyPort = view $ viewPort . to applyViewPortToPicture
 
 drawNodes :: GlossState g -> Picture
 drawNodes state = pictures [ draw node x y | (node, (x, y)) <- state ^. nodes . to M.toList ]

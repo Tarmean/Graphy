@@ -15,7 +15,8 @@ import Control.Monad.Reader
 import qualified Control.Monad.Logic as L
 import Control.Lens.TH
 import qualified Data.Map as M
-import Graphics.Gloss.Data.ViewState
+import Graphics.Gloss.Data.ViewPort
+import Control.Lens (Lens')
 
 import qualified Data.Vector.Unboxed as VU
 import qualified Data.Vector as VB
@@ -63,7 +64,7 @@ data QuickSIEnv s g
     }
 makeFields ''QuickSIEnv
 newtype Alg s g a
-    = Alg (ReaderT (QuickSIEnv s g) (L.LogicT (ST s)) a)
+    = Alg { runAlg :: ReaderT (QuickSIEnv s g) (L.LogicT (ST s)) a }
     deriving (Functor, Applicative, Monad, MonadReader (QuickSIEnv s g), Alternative, MonadPlus)
 type ALG s g a = (Graph g) => Alg s g a
 
@@ -76,14 +77,29 @@ toLogicT :: [a] -> L.LogicT m a
 toLogicT ls = L.LogicT $ \cons zero -> foldr cons zero ls
 
 
-data UIState = SClicked G.Node | SDragging G.Node (Float, Float) | SBase
+type OriginPoint = (Float, Float)
+data UIState
+    = SClickedNode G.Node OriginPoint
+    | SDraggingNode G.Node OriginPoint
+    | SBase
+    | SScaling OriginPoint
+    | STranslating OriginPoint
 data GlossState g
     = GlossState
     { _glossStateNodes :: M.Map G.Node (Float, Float)
     , _glossStateGraph :: g
-    , _glossStateViewState :: ViewState
+    , _glossStateViewPort :: ViewPort
     , _glossStateSelected :: Maybe G.Node
     , _glossStateUiState :: UIState
     }
 
+-- Transition '[ Add '[Translating, Scaling, ClickingNode]
+--             , ClickingNode ~> DraggingNode
+--             , Remove '[ClickingNode, Translating, Scaling, DraggingNode]
+--             ] 
+--
+viewTranslate :: Lens' ViewPort (Float, Float)
+viewTranslate f v = (\t' -> v {viewPortTranslate = t'}) <$> f (viewPortTranslate v)
+viewScale :: Lens' ViewPort Float
+viewScale f v = (\t' -> v {viewPortScale = t'}) <$> f (viewPortScale v)
 makeFields ''GlossState

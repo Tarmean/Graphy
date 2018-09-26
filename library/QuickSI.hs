@@ -1,3 +1,4 @@
+{-# Language ScopedTypeVariables #-}
 {-# Language FlexibleContexts #-}
 {-# Language GADTs #-}
 {-# Language RankNTypes #-}
@@ -13,6 +14,32 @@ import Control.Lens
 
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.ST (runST)
+import qualified Control.Monad.Primitive as P
+import qualified Control.Monad.Logic as L
+
+runQuickSI :: (WeightedGraph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> [VU.Vector GraphNode]
+runQuickSI g pattern = runST $ do
+    env <- (makeEnv g pattern)
+    L.observeAllT $ runReaderT (runAlg algorithm) env
+
+makeEnv :: forall m g. (P.PrimMonad m) => g -> [Matcher g] -> m (QuickSIEnv (P.PrimState m) g)
+makeEnv g matcherLs = do
+     let
+       pattern = V.fromList matcherLs
+       patternLength  = V.length pattern
+     usedFlags <- VM.replicate patternLength False
+     nodeMappings <- VU.thaw V.empty
+
+     let env
+             = QuickSIEnv
+             { _quickSIEnvGraph = g
+             , _quickSIEnvMappings  = nodeMappings
+             , _quickSIEnvUsed  = usedFlags
+             , _quickSIEnvDepth  = 0
+             , _quickSIEnvMatchers  = pattern
+             }
+     return env
 
 algorithm :: (Eq (GetLabel (NodeData g))) => ALG s g (VU.Vector GraphNode)
 algorithm = do
