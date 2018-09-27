@@ -8,6 +8,7 @@ module Types (module Types, module TypeHacks)where
 
 import qualified Data.Graph.Inductive as G
 import qualified Data.Set as S
+import qualified Data.Sequence as Seq
 import Control.Applicative
 import Control.Monad.State
 import Control.Monad.ST
@@ -18,10 +19,16 @@ import qualified Data.Map as M
 import Graphics.Gloss.Data.ViewPort
 import Control.Lens (Lens')
 
-import qualified Data.Vector.Unboxed as VU
-import qualified Data.Vector as VB
 
 import TypeHacks
+
+
+-- FIXME
+makeGraph :: [(Int, Int)] -> G.Gr () ()
+makeGraph xs =  graph0
+  where
+    uniqNodes = S.toList $ S.fromList $ concat [[x, y] | (x, y) <- xs]
+    graph0 = G.mkGraph [(n, ()) | n <- uniqNodes] $ concat [[(n, m, ()), (m, n, ())] | (n, m) <- xs]
 
 type AnnotatedEdge g = G.LEdge (EdgeData g)
 type WeightedEdge g = WeightedGraph g => G.LEdge (EdgeData g)
@@ -35,7 +42,9 @@ data NodeMatcher a
     , matcherLabel :: a
     , constraints :: [Constraint]
     }
+    deriving (Eq, Show)
 data Constraint = Degree !Int | HasEdge !Node
+  deriving (Eq, Show)
 
 data MstEnv g
     = MstEnv
@@ -46,33 +55,29 @@ data MstEnv g
     }
 makeFields ''MstEnv
 
-runMstMonad :: MstMonad g a -> g -> MstEnv g
-runMstMonad m = execState (unMST m) . MstEnv mempty mempty mempty
+runMstMonad :: MstMonad g a -> g -> (a, MstEnv g)
+runMstMonad m = runState (unMST m) . MstEnv mempty mempty mempty
 
 newtype MstMonad g a = MstMonad { unMST :: State (MstEnv g) a} deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
 type MST g a = (WeightedGraph g) => MstMonad g a
 
 type PatternNode = G.Node 
 type GraphNode = G.Node 
-data QuickSIEnv s g
+data QuickSIEnv g
     = QuickSIEnv
     { _quickSIEnvGraph :: g
-    , _quickSIEnvMappings :: VU.MVector s GraphNode
-    , _quickSIEnvUsed :: VU.MVector s Bool
-    , _quickSIEnvDepth :: Int
-    , _quickSIEnvMatchers :: VB.Vector (Matcher g)
+    , _quickSIEnvMappings :: Seq.Seq GraphNode
+    , _quickSIEnvMatchers :: [Matcher g]
     }
 makeFields ''QuickSIEnv
-newtype Alg s g a
-    = Alg { runAlg :: ReaderT (QuickSIEnv s g) (L.LogicT (ST s)) a }
-    deriving (Functor, Applicative, Monad, MonadReader (QuickSIEnv s g), Alternative, MonadPlus)
-type ALG s g a = (Graph g) => Alg s g a
+newtype Alg g a
+    = Alg { runAlg :: StateT (QuickSIEnv g) [] a }
+    deriving (Functor, Applicative, Monad, MonadState (QuickSIEnv g), Alternative, MonadPlus)
+type ALG g a = (Graph g) => Alg g a
 
-liftST :: ST s a -> Alg s g a
-liftST = Alg . lift . lift
+liftLs :: [a] -> Alg g a
+liftLs = Alg . lift
 
-liftLs :: [a] -> Alg s g a
-liftLs = Alg . lift . toLogicT
 toLogicT :: [a] -> L.LogicT m a
 toLogicT ls = L.LogicT $ \cons zero -> foldr cons zero ls
 

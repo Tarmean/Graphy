@@ -27,10 +27,12 @@ library:
   - fgl
   - mtl
   - containers
-  - vector
   - logict
   - lens
   - primitive
+
+  - tasty
+  - tasty-hspec
   source-dirs: library
 
 executables:
@@ -67,6 +69,7 @@ tests:
     - graphgenerator
     - tasty
     - tasty-hspec
+    - fgl
     ghc-options:
     - -rtsopts
     - -threaded

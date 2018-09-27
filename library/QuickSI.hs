@@ -2,60 +2,55 @@
 {-# Language FlexibleContexts #-}
 {-# Language GADTs #-}
 {-# Language RankNTypes #-}
+{-# Language LambdaCase #-}
 module QuickSI where
 import qualified Data.Graph.Inductive as G
 
+import Control.Monad.State
 import Types
-
-import qualified Data.Vector.Unboxed as VU
-import qualified Data.Vector.Generic.Mutable as VM
-import qualified Data.Vector.Generic as V
 import Control.Lens
+import qualified Data.Sequence as S
+import Control.Monad (guard)
+import Data.Foldable (toList)
+import Data.Maybe (isJust)
 
-import Control.Monad
-import Control.Monad.Reader
-import Control.Monad.ST (runST)
-import qualified Control.Monad.Primitive as P
-import qualified Control.Monad.Logic as L
+runQuickSI :: (Graph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> [[GraphNode]]
+runQuickSI g pattern = do
+    let env
+          = QuickSIEnv { _quickSIEnvGraph = g
+          , _quickSIEnvMappings  = S.empty
+          , _quickSIEnvMatchers  = pattern
+          }
+    evalStateT (runAlg algorithm) env
 
-runQuickSI :: (WeightedGraph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> [VU.Vector GraphNode]
-runQuickSI g pattern = runST $ do
-    env <- (makeEnv g pattern)
-    L.observeAllT $ runReaderT (runAlg algorithm) env
+runStuff :: (Graph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> ALG g r -> [r]
+runStuff g pattern m = do
+    let env
+          = QuickSIEnv { _quickSIEnvGraph = g
+          , _quickSIEnvMappings  = S.empty
+          , _quickSIEnvMatchers  = pattern
+          }
+    evalStateT (runAlg m) env
 
-makeEnv :: forall m g. (P.PrimMonad m) => g -> [Matcher g] -> m (QuickSIEnv (P.PrimState m) g)
-makeEnv g matcherLs = do
-     let
-       pattern = V.fromList matcherLs
-       patternLength  = V.length pattern
-     usedFlags <- VM.replicate patternLength False
-     nodeMappings <- VU.thaw V.empty
 
-     let env
-             = QuickSIEnv
-             { _quickSIEnvGraph = g
-             , _quickSIEnvMappings  = nodeMappings
-             , _quickSIEnvUsed  = usedFlags
-             , _quickSIEnvDepth  = 0
-             , _quickSIEnvMatchers  = pattern
-             }
-     return env
-
-algorithm :: (Eq (GetLabel (NodeData g))) => ALG s g (VU.Vector GraphNode)
+algorithm :: (Eq (GetLabel (NodeData g))) => ALG g [GraphNode]
 algorithm = do
    isDone <- checkDone
    if isDone
    then do
-       choices <- view mappings
-       liftST (VU.freeze choices)
+       toList <$> use mappings
    else do
        node <- candidates
-       withNode node algorithm
+       modifying mappings (S.|>node)
+       algorithm
 
-candidates :: (Eq (GetLabel (NodeData g))) => ALG s g GraphNode
+step :: (Eq (GetLabel (NodeData g))) => ALG g ()
+step = candidates >>= \n -> modifying mappings (S.|>n)
+
+candidates :: (Eq (GetLabel (NodeData g))) => ALG g GraphNode
 candidates = do
-    matcher <- getMatcher
-    node <- availableSuccessors 
+    matcher <- popMatcher
+    node <- availableSuccessors  matcher
 
     nodeUsed <- isUsed node
     guard (not nodeUsed)
@@ -63,77 +58,77 @@ candidates = do
     curLabel <- lookupLabel node
     guard (curLabel == matcherLabel matcher)
 
-    g <- view graph
-    let
-      checkConstraint (Degree n) = G.deg g node >= n
-      checkConstraint (HasEdge other) = G.hasEdge g (node, other)
-
-    guard $ all checkConstraint (constraints matcher)
+    guardAll (checkConstraint node) (constraints matcher)
 
     return node
+  where guardAll predicate ls = guard . and =<< traverse predicate ls
 
-availableSuccessors :: ALG s g GraphNode
-availableSuccessors = do
-    mparent <- getParentMapping
-    case mparent of
+checkConstraint :: GraphNode -> Constraint -> ALG g Bool
+checkConstraint node constraint = do
+    g <- use graph
+    case constraint of
+        (Degree n) -> return $ G.outdeg g node >= n
+        HasEdge other -> return $ G.hasEdge g (node, other)
+
+availableSuccessors :: Matcher g -> ALG g GraphNode
+availableSuccessors matcher = do
+    case parent matcher of
         Nothing -> allNodes
-        Just previous -> neighbors previous
+        Just curParent -> do
+          previous <- lookupMapping curParent
+          neighbors previous
 
-checkDone :: Alg s g Bool
-checkDone = do
-    curDepth <- view depth
-    curMappings <- view mappings
-    let maxDepth = VM.length curMappings
-    return (curDepth > maxDepth)
+checkDone :: Alg g Bool
+checkDone = uses matchers null
     
-allNodes :: ALG s g GraphNode
-allNodes = liftLs =<< view (graph . to G.nodes)
+-- TODO: Sort by outgoing edges to limit branching factor?
+allNodes :: ALG g GraphNode
+allNodes = liftLs =<< use (graph . to G.nodes)
 
-neighbors :: (Graph g) => GraphNode -> Alg s g GraphNode
+neighbors :: (Graph g) => GraphNode -> Alg g GraphNode
 neighbors node = do 
-    curGraph <- view graph
-    liftLs $ G.neighbors curGraph node
+    curGraph <- use graph
+    liftLs $ (\(_, o, _) -> o) <$> G.out curGraph node
 
 
-lookupLabel :: GraphNode -> ALG s g (GetLabel (NodeData g))
+lookupLabel :: GraphNode -> ALG g (GetLabel (NodeData g))
 lookupLabel node = do
-    curGraph <- view graph
-    Just lbl <- pure $ G.lab curGraph node
-    return (lbl ^. label)
+    curGraph <- use graph
+    case G.lab curGraph node of
+      Just dat -> return (dat ^. label)
+      Nothing -> error "Graph node not found"
 
-readMVec :: (VU.Unbox a) => VU.MVector s a -> Int -> Alg s g a
-readMVec vec i = liftST (vec `VM.read` i)
 
-getParentMapping :: Alg s g (Maybe GraphNode)
-getParentMapping = do
-    matcher <- getMatcher
-    traverse lookupMapping $ parent matcher
         
-getMatcher :: Alg s g (Matcher g)
-getMatcher = do
-    curDepth <- view depth
-    curMatchers <- view matchers
-    return (curMatchers V.! curDepth)
+popMatcher :: Alg g (Matcher g)
+popMatcher = do
+    cur <- uses matchers head
+    modifying matchers tail
+    return cur
 
-lookupMapping :: PatternNode -> Alg s g GraphNode
+lookupMapping :: PatternNode -> Alg g GraphNode
 lookupMapping node = do
-    curMappings <- view mappings
-    readMVec curMappings node
+    curMappings <- use mappings
+    return (S.index curMappings node)
 
-isUsed :: PatternNode -> Alg s g Bool
-isUsed node = view used >>= (`readMVec` node)
+isUsed :: PatternNode -> Alg g Bool
+isUsed node = isJust . S.elemIndexL node <$> use mappings
 
-withNode :: Node -> Alg s g r -> Alg s g r
-withNode node cont = do
-    usedVec <- view used
-    mappingsVec <- view mappings
-    curDepth <- view depth
+-- withNode :: Node -> Alg g r -> Alg g r
+-- withNode node cont = do
+--     usedVec <- view used
+--     mappingsVec <- view mappings
+--     curDepth <- view depth
 
-    liftST (VM.write usedVec node True)
-    liftST (VM.write mappingsVec curDepth node)
+--     liftST (VM.write usedVec node True)
+--     liftST (VM.write mappingsVec curDepth node)
 
-    r <- local (depth +~ 1) cont
+--     r <- local (depth +~ 1) cont
 
-    liftST (VM.write usedVec node False)
+--     liftST (VM.write usedVec node False)
 
-    return r
+--     return r
+
+
+
+

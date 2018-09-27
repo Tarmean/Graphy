@@ -15,7 +15,7 @@ import Control.Monad.Logic (lift, guard)
 import Types
 
 runMST :: (Graph g, IsUnweighted (NodeData g)) => (Node -> Node -> Double) -> (Node -> Double) -> g -> [Matcher g]
-runMST edgeWeight nodeWeight baseGraph = view matchers $ runMstMonad mst (addWeights edgeWeight nodeWeight baseGraph)
+runMST edgeWeight nodeWeight baseGraph = view matchers $ snd $ runMstMonad mst (addWeights edgeWeight nodeWeight baseGraph)
 
 mst :: MST g ()
 mst = do
@@ -82,7 +82,7 @@ makeMatcher :: AnnotatedEdge g -> MST g (Matcher g)
 makeMatcher (fromN, toN, _) = do
     g <- use graph
     missedEdges <- getMissedEdges toN
-    let edgeConstraints = HasEdge <$> missedEdges
+    let edgeConstraints = HasEdge <$> filter (/= fromN) missedEdges
     l <- lookupLabel toN
     return NodeMatcher
            { parent = Just fromN 
@@ -96,7 +96,7 @@ lookupLabel n = do
     return (l ^. label)
 addDegConstraint :: Graph g => g -> Node -> ([Constraint] -> [Constraint])
 addDegConstraint g toN = if deg >= 3 then (Degree deg:) else id
-  where deg = G.deg g toN
+  where deg = G.outdeg g toN
 
 getMissedEdges :: WeightedGraph g => G.Node -> MstMonad g [Node]
 getMissedEdges node = L.observeAllT $ do
@@ -110,8 +110,10 @@ getMissedEdges node = L.observeAllT $ do
     
 addFirstEdge :: AnnotatedEdge g -> MST g ()
 addFirstEdge e@(fromN, _, _) = do
-    addEdge e
+    initialMatcher <- makeFirstMatcher e
+    modifying matchers (initialMatcher:)
     modifying verts (S.insert fromN)
+    addEdge e
 
 addEdge  :: AnnotatedEdge g -> MST g ()
 addEdge e@(fromN, toN, _label) = do

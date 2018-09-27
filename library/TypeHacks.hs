@@ -19,6 +19,7 @@ import qualified Data.Graph.Inductive as G
 import Control.Lens
 
 data Weighted a = Weighted { wWeight :: !Double, wLabel :: a }
+  deriving Show
 
 -- Pack `G.Graph g => g a b` into `Graph g => g`
 type family NodeData g where

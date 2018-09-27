@@ -17,7 +17,7 @@ import Control.Lens
 main :: IO ()
 main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState render stepEvent stepTime
   where
-    initialState = makeGraph [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 0)]
+    initialState = makeState [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 0)]
     render = drawState
     stepEvent =  processEvent
     stepTime delta state = stepDraggedNode (stepNodes state delta)
@@ -72,12 +72,12 @@ findNode pos state = find inCircle $ map labelDist candidates
 calcDist :: Point -> Point -> Float
 calcDist p1 p2 =  magV (p2 - p1)
 
-makeGraph :: [(Int, Int)] -> GlossState (G.Gr () ())
-makeGraph xs =  GlossState locs graph0 viewPortInit Nothing SBase
+makeState :: [(Int, Int)] -> GlossState (G.Gr () ())
+makeState xs =  GlossState locs graph0 viewPortInit Nothing SBase
   where
     uniqNodes = nub $ concat [[x, y] | (x, y) <- xs]
     locs = M.fromList [(n, (fromIntegral n**3, fromIntegral n * 8)) | n <- uniqNodes]
-    graph0 = G.mkGraph [(n, ()) | n <- uniqNodes] $ concat [[(n, m, ()), (m, n, ())] | (n, m) <- xs]
+    graph0 = makeGraph xs
 
 stepNodes :: G.Graph gr => GlossState (gr a b) -> Float -> GlossState (gr a b)
 stepNodes state delta = state & nodes %~ M.mapWithKey (stepSingle state delta)
