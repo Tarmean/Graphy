@@ -1,7 +1,7 @@
 {-# Language FlexibleContexts #-}
 {-# Language GADTs #-}
 {-# Language RankNTypes #-}
-{-# Language TypeApplications, ScopedTypeVariables #-}
+{-# Language ScopedTypeVariables #-}
 module SpanningTree where
 import qualified Data.Graph.Inductive as G
 import qualified Data.Foldable as F
@@ -11,6 +11,7 @@ import Data.Monoid ((<>))
 import Control.Lens
 import qualified Control.Monad.Logic as L
 import Control.Monad.Logic (lift, guard)
+import Control.Monad (when)
 
 import Types
 
@@ -24,15 +25,14 @@ mst = do
     getFirstEdge >>= addFirstEdge
     let loop = do
                 processedCount <- use (verts . to length)
-                if processedCount /= nodeCount
-                then getSpanningEdge >>= addEdge >> loop
-                else return ()
+                when (processedCount /= nodeCount)
+                   $ getSpanningEdge >>= addEdge >> loop
     loop
 
 getFirstEdge :: MST g (AnnotatedEdge g)
 getFirstEdge  = do
     curGraph <- use graph
-    let allEdges = G.labEdges (curGraph)
+    let allEdges = G.labEdges curGraph
     return (selectFirstEdge curGraph allEdges)
 
 selectFirstEdge :: (WeightedGraph g) => g -> [AnnotatedEdge g] -> AnnotatedEdge g
@@ -77,6 +77,7 @@ makeFirstMatcher (fromN, _, _) = do
         { parent = Nothing
         , matcherLabel = l
         , constraints = addDegConstraint g fromN []
+        , source = fromN
         }
 makeMatcher :: AnnotatedEdge g -> MST g (Matcher g)
 makeMatcher (fromN, toN, _) = do
@@ -88,6 +89,7 @@ makeMatcher (fromN, toN, _) = do
            { parent = Just fromN 
            , matcherLabel = l
            , constraints = addDegConstraint g toN edgeConstraints
+           , source = toN
            }
 lookupLabel :: Node -> MST g (GetLabel (NodeData g))
 lookupLabel n = do
@@ -134,4 +136,4 @@ addWeights edgeWeight nodeWeight = G.gmap step
         )
     wInEdge node (lbl, other) = (Weighted (edgeWeight other node) lbl, other)
     wOutEdge node (lbl, other) = (Weighted (edgeWeight node other) lbl, other)
-    wSelf node lbl = Weighted (nodeWeight node) lbl
+    wSelf = Weighted . nodeWeight

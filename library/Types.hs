@@ -22,7 +22,6 @@ import Control.Lens (Lens')
 
 import TypeHacks
 
-
 -- FIXME
 makeGraph :: [(Int, Int)] -> G.Gr () ()
 makeGraph xs =  graph0
@@ -41,6 +40,7 @@ data NodeMatcher a
     { parent :: Maybe Node
     , matcherLabel :: a
     , constraints :: [Constraint]
+    , source :: Node
     }
     deriving (Eq, Show)
 data Constraint = Degree !Int | HasEdge !Node
@@ -81,7 +81,6 @@ liftLs = Alg . lift
 toLogicT :: [a] -> L.LogicT m a
 toLogicT ls = L.LogicT $ \cons zero -> foldr cons zero ls
 
-
 type OriginPoint = (Float, Float)
 data UIState
     = SClickedNode G.Node OriginPoint
@@ -98,13 +97,13 @@ data GlossState g
     , _glossStateUiState :: UIState
     }
 
--- Transition '[ Add '[Translating, Scaling, ClickingNode]
---             , ClickingNode ~> DraggingNode
---             , Remove '[ClickingNode, Translating, Scaling, DraggingNode]
---             ] 
---
 viewTranslate :: Lens' ViewPort (Float, Float)
 viewTranslate f v = (\t' -> v {viewPortTranslate = t'}) <$> f (viewPortTranslate v)
 viewScale :: Lens' ViewPort Float
 viewScale f v = (\t' -> v {viewPortScale = t'}) <$> f (viewPortScale v)
 makeFields ''GlossState
+
+data GraphPatch nLbl eLbl
+    = ReplaceEdge Node Node [eLbl]
+    | DeleteNode Node
+    | AddNode Node

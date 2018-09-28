@@ -3,6 +3,7 @@
 {-# Language GADTs #-}
 {-# Language RankNTypes #-}
 {-# Language LambdaCase #-}
+
 module QuickSI where
 import qualified Data.Graph.Inductive as G
 
@@ -13,15 +14,27 @@ import qualified Data.Sequence as S
 import Control.Monad (guard)
 import Data.Foldable (toList)
 import Data.Maybe (isJust)
+import qualified Data.Map as M
 
-runQuickSI :: (Graph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> [[GraphNode]]
+
+runQuickSI
+    :: (Graph g, Eq (GetLabel (NodeData g)))
+    => g -> [Matcher g] -> [M.Map Node Node]
 runQuickSI g pattern = do
-    let env
-          = QuickSIEnv { _quickSIEnvGraph = g
-          , _quickSIEnvMappings  = S.empty
-          , _quickSIEnvMatchers  = pattern
-          }
-    evalStateT (runAlg algorithm) env
+    finalMappings <- evalStateT (runAlg algorithm) env
+    return (toMap pattern finalMappings)
+  where
+    env = QuickSIEnv
+        { _quickSIEnvGraph = g
+        , _quickSIEnvMappings  = S.empty
+        , _quickSIEnvMatchers  = pattern
+        }
+
+
+toMap :: [NodeMatcher l] -> S.Seq GraphNode -> M.Map Node Node
+toMap pattern matchedNodes
+    = M.fromList
+    $ zip (source <$> pattern) (toList matchedNodes)
 
 runStuff :: (Graph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> ALG g r -> [r]
 runStuff g pattern m = do
@@ -33,12 +46,11 @@ runStuff g pattern m = do
     evalStateT (runAlg m) env
 
 
-algorithm :: (Eq (GetLabel (NodeData g))) => ALG g [GraphNode]
+algorithm :: (Eq (GetLabel (NodeData g))) => ALG g (S.Seq GraphNode)
 algorithm = do
    isDone <- checkDone
    if isDone
-   then do
-       toList <$> use mappings
+   then use mappings
    else do
        node <- candidates
        modifying mappings (S.|>node)
@@ -113,22 +125,5 @@ lookupMapping node = do
 
 isUsed :: PatternNode -> Alg g Bool
 isUsed node = isJust . S.elemIndexL node <$> use mappings
-
--- withNode :: Node -> Alg g r -> Alg g r
--- withNode node cont = do
---     usedVec <- view used
---     mappingsVec <- view mappings
---     curDepth <- view depth
-
---     liftST (VM.write usedVec node True)
---     liftST (VM.write mappingsVec curDepth node)
-
---     r <- local (depth +~ 1) cont
-
---     liftST (VM.write usedVec node False)
-
---     return r
-
-
 
 

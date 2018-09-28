@@ -11,6 +11,7 @@ import QuickSI
 import TypeHacks
 import Types hiding (makeGraph)
 import qualified Data.Graph.Inductive as G
+import qualified Data.Map as M
 
 andFlip :: [(a, a, c)] -> [(a, a, c)]
 andFlip ls = ls ++ [(j, i, l) | (i, j, l) <- ls]
@@ -22,7 +23,7 @@ exPattern = G.mkGraph [(n,n == 3) | n <-[0..3]] $ andFlip [(0, n, ()) | n <- [1.
 
 -- foo = run exGraph exPattern
 
-run :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g -> [Matcher g] -> [[GraphNode]]
+run :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g -> [Matcher g] -> [M.Map Node Node]
 run g p = runQuickSI g p
 
 mkOrder :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g ->  [Matcher g]
@@ -42,28 +43,8 @@ main = do
 spec :: Spec
 spec = parallel $ do 
   it "traversal order should follow weights" $ do
-    mkOrder pat `shouldBe` 
-         [ NodeMatcher
-             { parent = Nothing 
-             , matcherLabel = 0 
-             , constraints = [Degree 3]
-             }
-         , NodeMatcher
-             { parent = Just 0 
-             , matcherLabel = 1 
-             , constraints = []
-             }
-         , NodeMatcher
-             { parent = Just 0 
-             , matcherLabel = 2 
-             , constraints = []
-             }
-         , NodeMatcher
-             { parent = Just 0 
-             , matcherLabel = 3 
-             , constraints = []
-             }
-         ]
+    map source (mkOrder pat) `shouldBe` 
+         [ 0, 1, 2, 3 ]
   where
     pat :: G.Gr Int Int
     pat = G.mkGraph [(n,n) | n <-[0..3]] [(0, n, n) | n <- [1..3]]

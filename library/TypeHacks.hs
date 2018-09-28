@@ -2,7 +2,6 @@
 {-# Language ConstraintKinds #-}
 {-# Language FlexibleContexts #-}
 {-# Language FlexibleInstances #-}
-{-# Language FunctionalDependencies #-}
 
 {-# Language TypeApplications #-}
 {-# Language ScopedTypeVariables #-}
@@ -18,10 +17,20 @@ module TypeHacks where
 import qualified Data.Graph.Inductive as G
 import Control.Lens
 
+
+-- The point of this module is to make type errors terrible
+--
+-- PackedGraph stuffs node and edge label types into type families so that we don't
+-- have to mention them in type signatures that don't use them
+--
+-- Weights are tacked onto labels but functions that use labels shouldn't care whether a graph is weighted
+-- So label uses HasLabel to work for both weighted and unweighted graphs
+--
+-- IsWeighted / Unweighted are sufficient to dispatch HasLabel, that's why the are defined weirdly
+
 data Weighted a = Weighted { wWeight :: !Double, wLabel :: a }
   deriving Show
 
--- Pack `G.Graph g => g a b` into `Graph g => g`
 type family NodeData g where
     NodeData (g nlbl elbl) = nlbl
 type family EdgeData g where
@@ -44,13 +53,9 @@ type family GetLabel l where
 type IsWeighted a = (a ~ Weighted (GetLabel a))
 type IsUnweighted a = (a ~ GetLabel a)
 
--- Pack `G.Graph g => g (Weighted a) (Weighted b)` into `WeightedGraph g => g`
-
 getWeight :: Weighted a -> Double
-getWeight a = wWeight a
+getWeight = wWeight
 
--- It's all downward from here
--- Label should use wLabel for Weighted labels and id otherwise
 
 label :: forall l. HasLabel l => Lens' l (GetLabel l)
 label = getLabelApp @(ShouldStripWeight l)
