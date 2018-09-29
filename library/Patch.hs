@@ -1,22 +1,18 @@
 {-# Language FlexibleContexts #-}
-{-# Language GADTs #-}
+{-# Language FlexibleInstances #-}
+{-# Language TypeFamilies #-}
 module Patch where
+import TypeHacks
 import Types
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map as M
 
 
+class Patch m where
+    type EdgeLabel m
+    replaceEdges :: [(Node, Node, EdgeLabel m)] -> m ()
+    deleteNode :: Node -> m ()
+    addNode :: m Node
 
-applyPatch :: (Graph g) => M.Map Node Node -> GraphPatch (NodeData g) (EdgeData g) -> g -> g
-applyPatch m (ReplaceEdge bFrom bTo lbls) = addNew . removeOld
-  where
-    from = m M.! bFrom
-    to = m M.! bTo
-
-    lEdges = map (\l -> (from, to, l)) lbls
-    removeOld = G.delEdge (from, to)
-    addNew = G.insEdges lEdges
-    
-    
-applyPatch m (DeleteNode node) = G.delNode (m M.! node)
--- applyPatch m (AddNode node) g = DeleteNode (m M.! node)
+instance Patch (PatchAlg (g e v)) where
+    -- type EdgeLabel (PatchAlg g) = (EdgeData g)

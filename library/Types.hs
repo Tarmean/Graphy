@@ -103,7 +103,13 @@ viewScale :: Lens' ViewPort Float
 viewScale f v = (\t' -> v {viewPortScale = t'}) <$> f (viewPortScale v)
 makeFields ''GlossState
 
-data GraphPatch nLbl eLbl
-    = ReplaceEdge Node Node [eLbl]
-    | DeleteNode Node
-    | AddNode Node
+data RewriteEnv g
+  = RewriteEnv
+  { _rewriteEnvGraph :: g
+  , _rewriteEnvMappings :: M.Map Node Node
+  }
+makeFields ''RewriteEnv
+newtype PatchAlg g a
+    = PatchAlg
+    { unPatch :: State (RewriteEnv g) a
+    } deriving (Monad, Functor, Applicative, MonadState (RewriteEnv g))
