@@ -59,7 +59,7 @@ valV (x, y) = (x+y) / 100
 -- processEvent event state = state & viewPort %~ updateViewStateWithEvent event
 
 adjustPoint :: GlossState g -> Point -> Point
-adjustPoint state pos = state ^. viewPort . to invertViewPort  $ pos
+adjustPoint state =  invertViewPort (state ^. viewPort)
 
 findNode :: Vector -> GlossState g -> Maybe (G.Node, Float)
 findNode pos state = find inCircle $ map labelDist candidates

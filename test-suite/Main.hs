@@ -27,7 +27,7 @@ run :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g -> 
 run g p = runQuickSI g p
 
 mkOrder :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g ->  [Matcher g]
-mkOrder = runMST (\x y -> fromIntegral $ x + y) (\x -> fromIntegral x)
+mkOrder = runMST (\x y -> 0) (\x -> 5-fromIntegral x)
 
 
 main :: IO ()
@@ -43,8 +43,7 @@ main = do
 spec :: Spec
 spec = parallel $ do 
   it "traversal order should follow weights" $ do
-    map source (mkOrder pat) `shouldBe` 
-         [ 0, 1, 2, 3 ]
-  where
+    map source (mkOrder pat) `shouldBe` [ 0, 3, 2,1 ]
+  here
     pat :: G.Gr Int Int
     pat = G.mkGraph [(n,n) | n <-[0..3]] [(0, n, n) | n <- [1..3]]
