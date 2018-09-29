@@ -2,7 +2,6 @@
 {-# Language TypeFamilies #-}
 module GlossTest where
 
-import Data.Monoid
 import Data.List (nub, find)
 import Types
 import Graphics.Gloss as Gr hiding (Point)
@@ -11,8 +10,10 @@ import qualified Data.Graph.Inductive as G
 import qualified Data.Map as M
 import Data.Function
 import Graphics.Gloss.Data.Vector
+import qualified Graphics.Gloss.Data.Point.Arithmetic as V
 import Graphics.Gloss.Interface.Pure.Game
 import Control.Lens
+import FullRewrite
 
 main :: IO ()
 main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState render stepEvent stepTime
@@ -31,17 +32,17 @@ processEvent (EventKey (MouseButton RightButton) Down Modifiers {} pos) state
     | SBase <- state ^. uiState = state & uiState .~ SScaling pos
 processEvent (EventMotion pos') state 
     | SClickedNode n pos <- state ^. uiState
-    , magV (pos - pos') >= 4
+    , magV (pos V.- pos') >= 4
         = state & uiState .~ SDraggingNode n adjustedPos
     | SDraggingNode n _ <- state ^. uiState = state & uiState .~ SDraggingNode n adjustedPos
     | STranslating origin <- state ^. uiState
         = state
-            & viewPort . viewTranslate +~ (pos' - origin)
+            & viewPort . viewTranslate %~ ((pos' V.- origin) V.+)
             &  uiState .~ STranslating pos'
                 
     | SScaling origin <- state ^. uiState
         = state
-            & viewPort . viewScale +~ valV (pos' - origin)
+            & viewPort . viewScale +~ valV (pos' V.- origin)
             & uiState .~ SScaling pos'
     where
       adjustedPos = adjustPoint state pos'
@@ -70,14 +71,14 @@ findNode pos state = find inCircle $ map labelDist candidates
     candidates = state ^. nodes . to M.toList
 
 calcDist :: Point -> Point -> Float
-calcDist p1 p2 =  magV (p2 - p1)
+calcDist p1 p2 =  magV (p2 V.- p1)
 
 makeState :: [(Int, Int)] -> GlossState (G.Gr () ())
 makeState xs =  GlossState locs graph0 viewPortInit Nothing SBase
   where
     uniqNodes = nub $ concat [[x, y] | (x, y) <- xs]
     locs = M.fromList [(n, (fromIntegral n**3, fromIntegral n * 8)) | n <- uniqNodes]
-    graph0 = makeGraph xs
+    graph0 = test $ makeGraph xs
 
 stepNodes :: G.Graph gr => GlossState (gr a b) -> Float -> GlossState (gr a b)
 stepNodes state delta = state & nodes %~ M.mapWithKey (stepSingle state delta)
@@ -89,24 +90,29 @@ stepDraggedNode state
 
 
 stepSingle :: G.Graph gr => GlossState (gr a b) -> Float -> G.Node -> Point -> Point
-stepSingle GlossState {_glossStateNodes=locs, _glossStateGraph=g} delta point curPos = pushes + pulls + curPos
+stepSingle GlossState {_glossStateNodes=locs, _glossStateGraph=g} delta point curPos
+    = pushes V.+ pulls V.+ curPos
   where
-      pushes = sum [ delta `mulSV` push curPos otherPos | otherPos <- M.elems locs]
-      pulls = sum [delta `mulSV` pull curPos otherPos | (_,other,_) <- G.out g point, let otherPos = locs M.! other]
+      pushes = vSum [ delta `mulSV` push curPos otherPos | otherPos <- M.elems locs]
+      pulls = vSum [delta `mulSV` pull curPos otherPos | (_,other,_) <- G.out g point, let otherPos = locs M.! other]
+      vSum :: [ Point] -> Point
+      vSum = foldl (V.+) (0,0)
 
 pull :: Point -> Point -> Point
-pull p1 p2 = 0.5 `mulSV` (p2 - p1)
+pull p1 p2 = 0.5 `mulSV` (p2 V.- p1)
 
 push :: Point -> Point -> Point
 push p1 p2
-  | distSquared > 0 = pushForce  `mulSV` normalizeV (p1 - p2)
-  | otherwise = 0
+  | distSquared > 0 = pushForce  `mulSV` normalizeV (p1 V.- p2)
+  | otherwise = v0
   where
     distSquared = calcDist p1 p2 ** 2
     pushForce = maxPush / distSquared
     maxPush = 1000000
     
 
+v0 :: Point
+v0 = (0,0)
 drawState :: Graph g => GlossState g -> Picture
 drawState =  applyPort <*> drawNodes <> drawEdges -- check if this is too cute once i am less tired
   where applyPort = view $ viewPort . to applyViewPortToPicture

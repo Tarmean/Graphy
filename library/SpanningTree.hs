@@ -47,9 +47,11 @@ getSpanningEdge = do
     curGraph <- use graph 
     seen <- use verts
     let candidateEdges = adjacentNodes curGraph seen
-    return (selectSpanningEdge curGraph seen candidateEdges)
+    if null candidateEdges
+    then error "Error: Pattern has to be connected for QuickSI to work"
+    else return (selectSpanningEdge curGraph seen candidateEdges)
 
-selectSpanningEdge :: (WeightedGraph g) => g -> S.Set PatternNode -> [AnnotatedEdge g] -> AnnotatedEdge g 
+selectSpanningEdge :: (WeightedGraph g) => g -> S.Set Node -> [AnnotatedEdge g] -> AnnotatedEdge g 
 selectSpanningEdge g seen
     = F.minimumBy 
         (  O.comparing edgeWeight
@@ -64,7 +66,7 @@ selectSpanningEdge g seen
       where matchedNodes = S.toList (S.insert toN seen)
             edgeCount = length . G.edges
 
-adjacentNodes :: Graph g => g -> S.Set PatternNode -> [AnnotatedEdge g]
+adjacentNodes :: Graph g => g -> S.Set Node -> [AnnotatedEdge g]
 adjacentNodes g seen = filter isNeighbor $ G.labEdges g
   where
     isNeighbor (fromN, toN, _) = fromN `S.member` seen && toN `S.notMember` seen
@@ -77,7 +79,7 @@ makeFirstMatcher (fromN, _, _) = do
         { parent = Nothing
         , matcherLabel = l
         , constraints = addDegConstraint g fromN []
-        , source = fromN
+        , source = PatternNode fromN
         }
 makeMatcher :: AnnotatedEdge g -> MST g (Matcher g)
 makeMatcher (fromN, toN, _) = do
@@ -89,7 +91,7 @@ makeMatcher (fromN, toN, _) = do
            { parent = Just fromN 
            , matcherLabel = l
            , constraints = addDegConstraint g toN edgeConstraints
-           , source = toN
+           , source = PatternNode toN
            }
 lookupLabel :: Node -> MST g (GetLabel (NodeData g))
 lookupLabel n = do

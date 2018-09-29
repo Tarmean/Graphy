@@ -15,11 +15,12 @@ import Control.Monad (guard)
 import Data.Foldable (toList)
 import Data.Maybe (isJust)
 import qualified Data.Map as M
+import Data.Coerce
 
 
 runQuickSI
     :: (Graph g, Eq (GetLabel (NodeData g)))
-    => g -> [Matcher g] -> [M.Map Node Node]
+    => g -> [Matcher g] -> [M.Map PatternNode GraphNode]
 runQuickSI g pattern = do
     finalMappings <- evalStateT (runAlg algorithm) env
     return (toMap pattern finalMappings)
@@ -31,10 +32,10 @@ runQuickSI g pattern = do
         }
 
 
-toMap :: [NodeMatcher l] -> S.Seq GraphNode -> M.Map Node Node
+toMap :: [NodeMatcher l] -> S.Seq Node -> M.Map PatternNode  GraphNode
 toMap pattern matchedNodes
     = M.fromList
-    $ zip (source <$> pattern) (toList matchedNodes)
+    $ zip (source <$> pattern) (coerce $ toList matchedNodes)
 
 runStuff :: (Graph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> ALG g r -> [r]
 runStuff g pattern m = do
@@ -46,7 +47,7 @@ runStuff g pattern m = do
     evalStateT (runAlg m) env
 
 
-algorithm :: (Eq (GetLabel (NodeData g))) => ALG g (S.Seq GraphNode)
+algorithm :: (Eq (GetLabel (NodeData g))) => ALG g (S.Seq Node)
 algorithm = do
    isDone <- checkDone
    if isDone
@@ -59,7 +60,7 @@ algorithm = do
 step :: (Eq (GetLabel (NodeData g))) => ALG g ()
 step = candidates >>= \n -> modifying mappings (S.|>n)
 
-candidates :: (Eq (GetLabel (NodeData g))) => ALG g GraphNode
+candidates :: (Eq (GetLabel (NodeData g))) => ALG g Node
 candidates = do
     matcher <- popMatcher
     node <- availableSuccessors  matcher
@@ -75,14 +76,14 @@ candidates = do
     return node
   where guardAll predicate ls = guard . and =<< traverse predicate ls
 
-checkConstraint :: GraphNode -> Constraint -> ALG g Bool
+checkConstraint :: Node -> Constraint -> ALG g Bool
 checkConstraint node constraint = do
     g <- use graph
     case constraint of
         (Degree n) -> return $ G.outdeg g node >= n
         HasEdge other -> return $ G.hasEdge g (node, other)
 
-availableSuccessors :: Matcher g -> ALG g GraphNode
+availableSuccessors :: Matcher g -> ALG g Node
 availableSuccessors matcher = do
     case parent matcher of
         Nothing -> allNodes
@@ -94,16 +95,16 @@ checkDone :: Alg g Bool
 checkDone = uses matchers null
     
 -- TODO: Sort by outgoing edges to limit branching factor?
-allNodes :: ALG g GraphNode
+allNodes :: ALG g Node
 allNodes = liftLs =<< use (graph . to G.nodes)
 
-neighbors :: (Graph g) => GraphNode -> Alg g GraphNode
+neighbors :: (Graph g) => Node -> Alg g Node
 neighbors node = do 
     curGraph <- use graph
     liftLs $ (\(_, o, _) -> o) <$> G.out curGraph node
 
 
-lookupLabel :: GraphNode -> ALG g (GetLabel (NodeData g))
+lookupLabel :: Node -> ALG g (GetLabel (NodeData g))
 lookupLabel node = do
     curGraph <- use graph
     case G.lab curGraph node of
@@ -118,12 +119,12 @@ popMatcher = do
     modifying matchers tail
     return cur
 
-lookupMapping :: PatternNode -> Alg g GraphNode
+lookupMapping :: Node -> Alg g Node
 lookupMapping node = do
     curMappings <- use mappings
     return (S.index curMappings node)
 
-isUsed :: PatternNode -> Alg g Bool
+isUsed :: Node -> Alg g Bool
 isUsed node = isJust . S.elemIndexL node <$> use mappings
 
 

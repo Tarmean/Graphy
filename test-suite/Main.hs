@@ -12,19 +12,17 @@ import TypeHacks
 import Types hiding (makeGraph)
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map as M
+import FullRewrite
 
 andFlip :: [(a, a, c)] -> [(a, a, c)]
 andFlip ls = ls ++ [(j, i, l) | (i, j, l) <- ls]
-exGraph :: G.Gr Bool ()
-exGraph = G.mkGraph [(i, i == 1) | i <- [0..4]] $ andFlip [(0, 1, ()), (1, 2, ()), (2, 3, ()), (2, 4, ())] 
+exGraph :: G.Gr () ()
+exGraph = G.mkGraph [(i, ()) | i <- [0..4]] $ andFlip [(0, 1, ()), (1, 2, ()), (2, 3, ()), (2, 4, ())] 
 
-exPattern :: G.Gr Bool ()
-exPattern = G.mkGraph [(n,n == 3) | n <-[0..3]] $ andFlip [(0, n, ()) | n <- [1..3]]
+exPattern :: G.Gr () ()
+exPattern = G.mkGraph [(n,()) | n <-[0..3]] $ andFlip [(0, n, ()) | n <- [1..3]]
 
--- foo = run exGraph exPattern
 
-run :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g -> [Matcher g] -> [M.Map Node Node]
-run g p = runQuickSI g p
 
 mkOrder :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g ->  [Matcher g]
 mkOrder = runMST (\x y -> 0) (\x -> 5-fromIntegral x)
@@ -44,6 +42,6 @@ spec :: Spec
 spec = parallel $ do 
   it "traversal order should follow weights" $ do
     map source (mkOrder pat) `shouldBe` [ 0, 3, 2,1 ]
-  here
+  where
     pat :: G.Gr Int Int
     pat = G.mkGraph [(n,n) | n <-[0..3]] [(0, n, n) | n <- [1..3]]

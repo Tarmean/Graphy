@@ -3,16 +3,15 @@
 {-# Language GADTs #-}
 {-# Language GeneralizedNewtypeDeriving #-}
 {-# Language TemplateHaskell #-}
+{-# Language StandaloneDeriving #-}
 {-# Language MultiParamTypeClasses, FlexibleInstances, FunctionalDependencies, UndecidableInstances #-}
 module Types (module Types, module TypeHacks)where
 
 import qualified Data.Graph.Inductive as G
 import qualified Data.Set as S
 import qualified Data.Sequence as Seq
-import Control.Applicative
+import Control.Applicative (Alternative)
 import Control.Monad.State
-import Control.Monad.ST
-import Control.Monad.Reader
 import qualified Control.Monad.Logic as L
 import Control.Lens.TH
 import qualified Data.Map as M
@@ -21,6 +20,11 @@ import Control.Lens (Lens')
 
 
 import TypeHacks
+ 
+newtype PatternNode = PatternNode { unPNode :: G.Node }
+  deriving (Eq, Ord, Num, Show)
+newtype GraphNode = GraphNode { unGNode :: G.Node }
+  deriving (Eq, Ord, Show, Num)
 
 -- FIXME
 makeGraph :: [(Int, Int)] -> G.Gr () ()
@@ -40,7 +44,7 @@ data NodeMatcher a
     { parent :: Maybe Node
     , matcherLabel :: a
     , constraints :: [Constraint]
-    , source :: Node
+    , source :: PatternNode
     }
     deriving (Eq, Show)
 data Constraint = Degree !Int | HasEdge !Node
@@ -61,12 +65,10 @@ runMstMonad m = runState (unMST m) . MstEnv mempty mempty mempty
 newtype MstMonad g a = MstMonad { unMST :: State (MstEnv g) a} deriving (Functor, Applicative, Monad, MonadState (MstEnv g))
 type MST g a = (WeightedGraph g) => MstMonad g a
 
-type PatternNode = G.Node 
-type GraphNode = G.Node 
 data QuickSIEnv g
     = QuickSIEnv
     { _quickSIEnvGraph :: g
-    , _quickSIEnvMappings :: Seq.Seq GraphNode
+    , _quickSIEnvMappings :: Seq.Seq Node
     , _quickSIEnvMatchers :: [Matcher g]
     }
 makeFields ''QuickSIEnv
@@ -106,7 +108,9 @@ makeFields ''GlossState
 data RewriteEnv g
   = RewriteEnv
   { _rewriteEnvGraph :: g
-  , _rewriteEnvMappings :: M.Map Node Node
+  , _rewriteEnvMappings :: M.Map PatternNode GraphNode
+  , _rewriteEnvPattern :: g
+  , _rewriteEnvMaxKey :: GraphNode
   }
 makeFields ''RewriteEnv
 newtype PatchAlg g a
