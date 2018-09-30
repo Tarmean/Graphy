@@ -30,6 +30,8 @@ library:
   - logict
   - lens
   - primitive
+  - random-shuffle
+  - random
 
   - tasty
   - tasty-hspec

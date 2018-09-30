@@ -2,28 +2,29 @@
 {-# Language TypeFamilies #-}
 module GlossTest where
 
-import Data.List (nub, find)
+import Data.List (find)
 import Types
 import Graphics.Gloss as Gr hiding (Point)
 import Graphics.Gloss.Data.ViewPort
 import qualified Data.Graph.Inductive as G
-import qualified Data.Map as M
 import Data.Function
 import Graphics.Gloss.Data.Vector
-import qualified Graphics.Gloss.Data.Point.Arithmetic as V
 import Graphics.Gloss.Interface.Pure.Game
 import Control.Lens
 import FullRewrite
+import ForceDirectedGraphLayout
+import qualified Graphics.Gloss.Data.Point.Arithmetic as V
 
 main :: IO ()
-main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState render stepEvent stepTime
+main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState render processEvent stepTime
   where
-    initialState = makeState [(0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 0)]
+    initialState = over graph (test.test.test) makeState
     render = drawState
-    stepEvent =  processEvent
-    stepTime delta state = stepDraggedNode (stepNodes state delta)
+    stepTime delta state
+        = state & graph %~ stepNodes delta
+                & placeDraggedNode 
 
-processEvent :: Event -> GlossState g -> GlossState g
+processEvent :: (Graph g, NodeData g ~ P ()) => Event -> GlossState g -> GlossState g
 processEvent (EventKey (MouseButton LeftButton) Down Modifiers {} pos) state 
     | Just (node, _) <- findNode pos state
       = state & uiState .~ SClickedNode node pos
@@ -46,7 +47,6 @@ processEvent (EventMotion pos') state
             & uiState .~ SScaling pos'
     where
       adjustedPos = adjustPoint state pos'
-
 processEvent (EventKey (MouseButton LeftButton) Up Modifiers {} _) state
   | SClickedNode n _ <- state ^. uiState = state & uiState .~ SBase
                                            & selected .~ Just n
@@ -57,76 +57,46 @@ processEvent _ s = s
 
 valV :: Point -> Float
 valV (x, y) = (x+y) / 100
--- processEvent event state = state & viewPort %~ updateViewStateWithEvent event
 
 adjustPoint :: GlossState g -> Point -> Point
 adjustPoint state =  invertViewPort (state ^. viewPort)
 
-findNode :: Vector -> GlossState g -> Maybe (G.Node, Float)
+findNode :: G.Graph g => Vector -> GlossState (g (P ()) b) -> Maybe (G.Node, Float)
 findNode pos state = find inCircle $ map labelDist candidates
   where
     adjustedPos = adjustPoint state pos
-    labelDist  = over _2 (calcDist adjustedPos)
+    labelDist  = over _2 (calcDist adjustedPos . getAnn)
     inCircle (_, dist) = dist <= 6
-    candidates = state ^. nodes . to M.toList
+    candidates = state ^. graph . to G.labNodes
 
-calcDist :: Point -> Point -> Float
-calcDist p1 p2 =  magV (p2 V.- p1)
-
-makeState :: [(Int, Int)] -> GlossState (G.Gr () ())
-makeState xs =  GlossState locs graph0 viewPortInit Nothing SBase
+makeState ::  GlossState (G.Gr (P ()) ())
+makeState =  GlossState graph0 viewPortInit Nothing SBase
   where
-    uniqNodes = nub $ concat [[x, y] | (x, y) <- xs]
-    locs = M.fromList [(n, (fromIntegral n**3, fromIntegral n * 8)) | n <- uniqNodes]
-    graph0 = test $ makeGraph xs
-
-stepNodes :: G.Graph gr => GlossState (gr a b) -> Float -> GlossState (gr a b)
-stepNodes state delta = state & nodes %~ M.mapWithKey (stepSingle state delta)
-
-stepDraggedNode :: GlossState g -> GlossState g
-stepDraggedNode state
-  | SDraggingNode n p <- state ^. uiState = state & nodes . ix n .~ p
-  | otherwise = state
+graph0 :: G.Gr (Ann (Float, Float) ()) ()
+graph0 = G.mkGraph [(0, Ann (0,0) ()), (1, Ann (30, 0) ()), (2, Ann (-30, 0) ())] [(0, 1, ()), (1, 0, ()), (1, 2, ()), (2, 1, ())]
 
 
-stepSingle :: G.Graph gr => GlossState (gr a b) -> Float -> G.Node -> Point -> Point
-stepSingle GlossState {_glossStateNodes=locs, _glossStateGraph=g} delta point curPos
-    = pushes V.+ pulls V.+ curPos
-  where
-      pushes = vSum [ delta `mulSV` push curPos otherPos | otherPos <- M.elems locs]
-      pulls = vSum [delta `mulSV` pull curPos otherPos | (_,other,_) <- G.out g point, let otherPos = locs M.! other]
-      vSum :: [ Point] -> Point
-      vSum = foldl (V.+) (0,0)
-
-pull :: Point -> Point -> Point
-pull p1 p2 = 0.5 `mulSV` (p2 V.- p1)
-
-push :: Point -> Point -> Point
-push p1 p2
-  | distSquared > 0 = pushForce  `mulSV` normalizeV (p1 V.- p2)
-  | otherwise = v0
-  where
-    distSquared = calcDist p1 p2 ** 2
-    pushForce = maxPush / distSquared
-    maxPush = 1000000
-    
-
-v0 :: Point
-v0 = (0,0)
-drawState :: Graph g => GlossState g -> Picture
+    -- locs = M.fromList [(n, (fromIntegral n**3, fromIntegral n * 8)) | n <- uniqNodes]
+    -- graph0
+    --     = G.mkGraph
+    --      [(n, ((fromIntegral n+1)/5, (fromIntegral n+1)/5^2)) | n <- uniqNodes]
+    --     $ concat [[(n, m, ()), (m, n, ())] | (n, m) <- xs]
+drawState :: G.Graph g => GlossState (g (P ()) b) -> Picture
 drawState =  applyPort <*> drawNodes <> drawEdges -- check if this is too cute once i am less tired
   where applyPort = view $ viewPort . to applyViewPortToPicture
 
-drawNodes :: GlossState g -> Picture
-drawNodes state = pictures [ draw node x y | (node, (x, y)) <- state ^. nodes . to M.toList ]
+drawNodes :: G.Graph g => GlossState (g (P ()) b) -> Picture
+drawNodes state = pictures [ draw node x y w | (node, w@(Ann (x, y) _)) <- state ^. graph . to G.labNodes ]
   where
     isSelected n = state ^. selected == Just n
-    draw n x y = translate x y  $ drawPoint (isSelected n)
+    draw n x y w = translate x y  $ drawPoint (isSelected n) <> drawText w
 
-drawEdges :: Graph g => GlossState g -> Picture
+drawEdges :: (G.Graph g) => GlossState (g (P ()) b) -> Picture
 drawEdges g = pictures [ drawEdge g l r | (l, r) <- g ^. graph . to G.edges]
 
 
+drawText :: Show s => s -> Picture
+drawText w = translate 7 (-1) $ text (show w)
 drawPoint :: Bool -> Picture
 drawPoint isSelected = (colored nodePic)
    where
@@ -135,11 +105,14 @@ drawPoint isSelected = (colored nodePic)
        | isSelected = color red
        | otherwise = id
 
-drawEdge :: GlossState g -> G.Node -> G.Node -> Picture
-drawEdge g = drawLine `on` getPos g
-
-getPos :: GlossState g -> G.Node -> Point
-getPos g n = g ^?! nodes . ix n
+drawEdge :: G.Graph g => GlossState (g (P ()) b) -> G.Node -> G.Node -> Picture
+drawEdge g = drawLine `on` getPos (g ^. graph)
 
 drawLine :: Point -> Point -> Picture
 drawLine l r =  line [l, r]
+
+
+placeDraggedNode :: (G.DynGraph g, HasAnn n Point) => GlossState (g n e) -> GlossState (g n e)
+placeDraggedNode state
+  | SDraggingNode n p <- state ^. uiState = state & graph . graphNode n . lab . ann .~ p
+  | otherwise = state

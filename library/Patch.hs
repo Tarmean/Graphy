@@ -70,6 +70,7 @@ class Patch m where
         -> NodeLabel m 
         -> [(EdgeLabel m, PatternNode)]
         -> m ()
+    labelOf :: PatternNode -> m (NodeLabel m)
 
 instance (Eq e) => Patch (PatchAlg (Gr.Gr v e)) where
     type EdgeLabel (PatchAlg (Gr.Gr v e)) = e
@@ -94,6 +95,11 @@ instance (Eq e) => Patch (PatchAlg (Gr.Gr v e)) where
         toEdges <- traverseOf (each . _2) translate inE
         fromEdges <- traverseOf (each . _2) translate outE
         modifying graph (coerce (toEdges, node, nlbl, fromEdges) G.&)
+    labelOf node = do
+        m <- uses pattern (\g -> G.lab g $ unPNode node)
+        case m of
+            Just n -> return n
+            Nothing -> error "Node not in pattern"
         
 getOldEdges :: PatternNode -> PatternNode -> PatchAlg (Gr.Gr v e) [(GraphNode, GraphNode, e)]
 getOldEdges pFrom pTo = do

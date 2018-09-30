@@ -16,22 +16,29 @@ import qualified Control.Monad.Logic as L
 import Control.Lens.TH
 import qualified Data.Map as M
 import Graphics.Gloss.Data.ViewPort
-import Control.Lens (Lens')
+import Control.Lens (Lens', Traversal')
+import System.Random
 
 
 import TypeHacks
  
+data Ann a b = Ann 
+  { _annAnn :: a
+  , _annDat :: b
+  }
+  deriving (Show)
+makeFields ''Ann
+instance Eq b => Eq (Ann a b) where
+    Ann _ a == Ann _ b = a == b
+getAnn :: Ann a b -> a
+getAnn (Ann a _) = a
+type P b = Ann (Float, Float) b
 newtype PatternNode = PatternNode { unPNode :: G.Node }
   deriving (Eq, Ord, Num, Show)
 newtype GraphNode = GraphNode { unGNode :: G.Node }
   deriving (Eq, Ord, Show, Num)
 
 -- FIXME
-makeGraph :: [(Int, Int)] -> G.Gr () ()
-makeGraph xs =  graph0
-  where
-    uniqNodes = S.toList $ S.fromList $ concat [[x, y] | (x, y) <- xs]
-    graph0 = G.mkGraph [(n, ()) | n <- uniqNodes] $ concat [[(n, m, ()), (m, n, ())] | (n, m) <- xs]
 
 type AnnotatedEdge g = G.LEdge (EdgeData g)
 type WeightedEdge g = WeightedGraph g => G.LEdge (EdgeData g)
@@ -70,6 +77,7 @@ data QuickSIEnv g
     { _quickSIEnvGraph :: g
     , _quickSIEnvMappings :: Seq.Seq Node
     , _quickSIEnvMatchers :: [Matcher g]
+    , _quickSIEnvRng :: StdGen
     }
 makeFields ''QuickSIEnv
 newtype Alg g a
@@ -92,8 +100,7 @@ data UIState
     | STranslating OriginPoint
 data GlossState g
     = GlossState
-    { _glossStateNodes :: M.Map G.Node (Float, Float)
-    , _glossStateGraph :: g
+    { _glossStateGraph :: g
     , _glossStateViewPort :: ViewPort
     , _glossStateSelected :: Maybe G.Node
     , _glossStateUiState :: UIState
@@ -117,3 +124,21 @@ newtype PatchAlg g a
     = PatchAlg
     { unPatch :: State (RewriteEnv g) a
     } deriving (Monad, Functor, Applicative, MonadState (RewriteEnv g))
+
+getPos :: G.Graph g => g (P ()) b -> G.Node -> (Float, Float)
+getPos g p = case G.lab g p of
+    Nothing -> error "Point unknown"
+    Just (Ann r _) -> r
+
+data NContext n e
+    = NContext
+    { _nContextInEdges :: [(e, Node)]
+    , _nContextNodeId :: Node
+    , _nContextLab :: n
+    , _nContextOutEdges :: [(e, Node)]
+    }
+makeFields ''NContext
+graphNode :: G.DynGraph g => Node -> Traversal' (g n e)  (NContext n e)
+graphNode node f g = case G.match node g of
+    (Just (to, n, l, from), g') -> (\(NContext to' n' l' from') -> (to', n', l', from') G.& g') <$> f (NContext to n l from)
+    (Nothing, g') -> pure g'

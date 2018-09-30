@@ -16,6 +16,8 @@ import Data.Foldable (toList)
 import Data.Maybe (isJust)
 import qualified Data.Map as M
 import Data.Coerce
+import System.Random.Shuffle
+import System.Random
 
 
 runQuickSI
@@ -29,6 +31,7 @@ runQuickSI g pattern = do
         { _quickSIEnvGraph = g
         , _quickSIEnvMappings  = S.empty
         , _quickSIEnvMatchers  = pattern
+        , _quickSIEnvRng = mkStdGen 2
         }
 
 
@@ -63,7 +66,7 @@ step = candidates >>= \n -> modifying mappings (S.|>n)
 candidates :: (Eq (GetLabel (NodeData g))) => ALG g Node
 candidates = do
     matcher <- popMatcher
-    node <- availableSuccessors  matcher
+    node <- availableSuccessors matcher
 
     nodeUsed <- isUsed node
     guard (not nodeUsed)
@@ -76,6 +79,15 @@ candidates = do
     return node
   where guardAll predicate ls = guard . and =<< traverse predicate ls
 
+
+sample :: [a] -> ALG g a
+sample ls = do
+     gen <- use rng
+     let (gen', gen'') = split gen
+         ls' = shuffle' ls (length ls) gen''
+     rng .= gen'
+     liftLs ls'
+     
 checkConstraint :: Node -> Constraint -> ALG g Bool
 checkConstraint node constraint = do
     g <- use graph
@@ -96,12 +108,12 @@ checkDone = uses matchers null
     
 -- TODO: Sort by outgoing edges to limit branching factor?
 allNodes :: ALG g Node
-allNodes = liftLs =<< use (graph . to G.nodes)
+allNodes = sample =<< use (graph . to G.nodes)
 
 neighbors :: (Graph g) => Node -> Alg g Node
 neighbors node = do 
     curGraph <- use graph
-    liftLs $ (\(_, o, _) -> o) <$> G.out curGraph node
+    sample $ (\(_, o, _) -> o) <$> G.out curGraph node
 
 
 lookupLabel :: Node -> ALG g (GetLabel (NodeData g))
