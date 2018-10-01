@@ -26,7 +26,7 @@ main =  do
         1 * 2 .-> 3 * (1+2) + 4 * (1+2)
         1 * 2 .-> 1 * 2 * 3
         1 * 2 .-> 3 * (1+2) + 4 * (1+2)
-        1 * 2 .-> 3 * (1+2) + 4 * (1+2)
+        1 * 2 + 2 * 3 .-> 1 * 2 * 3
 
     initialState gen = over graph (foo gen) makeState
     render = drawState

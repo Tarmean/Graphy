@@ -27,13 +27,13 @@ runQuickSI gen g patt = map (view mappings) $ execStateT (runAlg $ algorithm pat
         , _quickSIEnvRng = gen
         }
 
-algorithm :: (MonadQuickSI m, MatchLabels (MLabel m) (MatchLabel m)) => [NodeMatcher (MatchLabel m)] -> m ()
+algorithm :: (MonadShuffle m, MonadQuickSI m, MatchLabels (MLabel m) (MatchLabel m)) => [NodeMatcher (MatchLabel m)] -> m ()
 algorithm = foldM_ (const step) ()
   where step matcher = candidates matcher >>= uncurry selectMatch
 
-candidates :: (MonadQuickSI m, MatchLabels (MLabel m) (MatchLabel m)) => NodeMatcher (MatchLabel m) -> m (PatternNode, GraphNode)
+candidates :: (MonadShuffle m, MonadQuickSI m, MatchLabels (MLabel m) (MatchLabel m)) => NodeMatcher (MatchLabel m) -> m (PatternNode, GraphNode)
 candidates matcher = do
-    node <- branch =<< availableSuccessors matcher
+    node <- branch =<< shuffle =<< availableSuccessors matcher
 
     nodeUsed <- isUsed node
     guard (not nodeUsed)
