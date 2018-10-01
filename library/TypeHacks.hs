@@ -38,14 +38,9 @@ type family EdgeData g where
 type family BaseGraph g  where
     BaseGraph (g nlbl elbl) = g
 type PackedGraph g = (BaseGraph g (NodeData g) (EdgeData g) ~ g)
-type Graph g =
-     ( G.DynGraph (BaseGraph g)
-     , HasLabel (NodeData g)
-     , HasLabel (EdgeData g)
-     , PackedGraph g
-     )
-type WeightedGraph g = (Graph g, IsWeighted (NodeData g), IsWeighted (EdgeData g))
+type Graph g = (G.Graph (BaseGraph g), PackedGraph g)
 
+type DynGraph g = (Graph g, G.DynGraph (BaseGraph g))
 type family GetLabel l where
     GetLabel (Weighted l) = l
     GetLabel l = l

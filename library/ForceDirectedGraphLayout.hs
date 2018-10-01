@@ -29,7 +29,7 @@ push p1 p2
   | otherwise = v0
   where
     distSquared = calcDist p1 p2 ** 2
-    pushForce = min (maxPush / distSquared) 10000
+    pushForce = maxPush / distSquared
     maxPush = 100000
     
 v0 :: Point

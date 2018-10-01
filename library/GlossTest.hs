@@ -11,19 +11,34 @@ import Data.Function
 import Graphics.Gloss.Data.Vector
 import Graphics.Gloss.Interface.Pure.Game
 import Control.Lens
-import FullRewrite
+import GenMonad (runGenMonad, placeNode, (.->))
 import ForceDirectedGraphLayout
 import qualified Graphics.Gloss.Data.Point.Arithmetic as V
+import System.Random
 
 main :: IO ()
-main =  play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 initialState render processEvent stepTime
+main =  do
+    gen <- getStdGen
+    play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 (initialState gen) render processEvent stepTime
   where
-    initialState = over graph (test.test.test) makeState
+    foo gen g = runGenMonad gen g (\_ () -> True) placeNode $ do
+        G.empty .-> 1 * 2 + 3 * 2 + 4 * 3
+        1 * 2 .-> 3 * (1+2) + 4 * (1+2)
+        1 * 2 .-> 1 * 2 * 3
+        1 * 2 .-> 3 * (1+2) + 4 * (1+2)
+        1 * 2 .-> 3 * (1+2) + 4 * (1+2)
+
+    initialState gen = over graph (foo gen) makeState
     render = drawState
     stepTime delta state
         = state & graph %~ stepNodes delta
                 & placeDraggedNode 
 
+f :: G.Gr (P ()) b -> GenMonad (G.Gr (P ()) b) () () -> IO (G.Gr (P ())
+ b)
+f g m = do
+    gen <- getStdGen
+    return $ runGenMonad gen g (\_ () -> True) placeNode m
 processEvent :: (Graph g, NodeData g ~ P ()) => Event -> GlossState g -> GlossState g
 processEvent (EventKey (MouseButton LeftButton) Down Modifiers {} pos) state 
     | Just (node, _) <- findNode pos state
@@ -70,17 +85,8 @@ findNode pos state = find inCircle $ map labelDist candidates
     candidates = state ^. graph . to G.labNodes
 
 makeState ::  GlossState (G.Gr (P ()) ())
-makeState =  GlossState graph0 viewPortInit Nothing SBase
-  where
-graph0 :: G.Gr (Ann (Float, Float) ()) ()
-graph0 = G.mkGraph [(0, Ann (0,0) ()), (1, Ann (30, 0) ()), (2, Ann (-30, 0) ())] [(0, 1, ()), (1, 0, ()), (1, 2, ()), (2, 1, ())]
+makeState =  GlossState G.empty viewPortInit Nothing SBase
 
-
-    -- locs = M.fromList [(n, (fromIntegral n**3, fromIntegral n * 8)) | n <- uniqNodes]
-    -- graph0
-    --     = G.mkGraph
-    --      [(n, ((fromIntegral n+1)/5, (fromIntegral n+1)/5^2)) | n <- uniqNodes]
-    --     $ concat [[(n, m, ()), (m, n, ())] | (n, m) <- xs]
 drawState :: G.Graph g => GlossState (g (P ()) b) -> Picture
 drawState =  applyPort <*> drawNodes <> drawEdges -- check if this is too cute once i am less tired
   where applyPort = view $ viewPort . to applyViewPortToPicture
@@ -96,7 +102,7 @@ drawEdges g = pictures [ drawEdge g l r | (l, r) <- g ^. graph . to G.edges]
 
 
 drawText :: Show s => s -> Picture
-drawText w = translate 7 (-1) $ text (show w)
+drawText w = translate 7 (-1) $ scale 0.1 0.1 $ text (show w)
 drawPoint :: Bool -> Picture
 drawPoint isSelected = (colored nodePic)
    where

@@ -12,7 +12,8 @@ import TypeHacks
 import Types hiding (makeGraph)
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map as M
-import FullRewrite
+import GenMonad as GM
+import System.Random as R
 
 andFlip :: [(a, a, c)] -> [(a, a, c)]
 andFlip ls = ls ++ [(j, i, l) | (i, j, l) <- ls]
@@ -23,9 +24,11 @@ exPattern :: G.Gr () ()
 exPattern = G.mkGraph [(n,()) | n <-[0..3]] $ andFlip [(0, n, ()) | n <- [1..3]]
 
 
+foo :: (Monoid a, Monoid b) => G.Gr a b -> G.Gr a b
+foo g = GM.runGenMonad (R.mkStdGen 0) g (\_ () -> True) test
 
-mkOrder :: (Graph g, Eq (GetLabel (NodeData g)), IsUnweighted (NodeData g)) => g ->  [Matcher g]
-mkOrder = runMST (\x y -> 0) (\x -> 5-fromIntegral x)
+mkOrder :: (DynGraph g) => g ->  [Matcher g]
+mkOrder = runMST (\x y -> fromIntegral $ 5 - y - x)
 
 
 main :: IO ()

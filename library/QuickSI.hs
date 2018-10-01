@@ -10,60 +10,39 @@ import qualified Data.Graph.Inductive as G
 import Control.Monad.State
 import Types
 import Control.Lens
-import qualified Data.Sequence as S
 import Control.Monad (guard)
 import Data.Foldable (toList)
 import Data.Maybe (isJust)
-import qualified Data.Map as M
+import qualified Data.Map.Strict as M
 import Data.Coerce
 import System.Random.Shuffle
 import System.Random
 
 
 runQuickSI
-    :: (Graph g, Eq (GetLabel (NodeData g)))
-    => g -> [Matcher g] -> [M.Map PatternNode GraphNode]
-runQuickSI g pattern = do
-    finalMappings <- evalStateT (runAlg algorithm) env
-    return (toMap pattern finalMappings)
+    :: (G.DynGraph g)
+    => StdGen -> (n -> l -> Bool) -> g n e -> [NodeMatcher l] -> [M.Map PatternNode GraphNode]
+runQuickSI gen test g patt = evalStateT (runAlg algorithm) env
   where
     env = QuickSIEnv
         { _quickSIEnvGraph = g
-        , _quickSIEnvMappings  = S.empty
-        , _quickSIEnvMatchers  = pattern
-        , _quickSIEnvRng = mkStdGen 2
+        , _quickSIEnvMappings  = M.empty
+        , _quickSIEnvMatchers  = patt
+        , _quickSIEnvRng = gen
+        , _quickSIEnvTester = test
         }
 
-
-toMap :: [NodeMatcher l] -> S.Seq Node -> M.Map PatternNode  GraphNode
-toMap pattern matchedNodes
-    = M.fromList
-    $ zip (source <$> pattern) (coerce $ toList matchedNodes)
-
-runStuff :: (Graph g, Eq (GetLabel (NodeData g))) => g -> [Matcher g] -> ALG g r -> [r]
-runStuff g pattern m = do
-    let env
-          = QuickSIEnv { _quickSIEnvGraph = g
-          , _quickSIEnvMappings  = S.empty
-          , _quickSIEnvMatchers  = pattern
-          }
-    evalStateT (runAlg m) env
-
-
-algorithm :: (Eq (GetLabel (NodeData g))) => ALG g (S.Seq Node)
+algorithm :: (Graph g, G.DynGraph (BaseGraph g)) => Alg g l (M.Map PatternNode GraphNode)
 algorithm = do
    isDone <- checkDone
    if isDone
    then use mappings
    else do
-       node <- candidates
-       modifying mappings (S.|>node)
+       (p, g) <- candidates
+       modifying mappings (M.insert p g)
        algorithm
 
-step :: (Eq (GetLabel (NodeData g))) => ALG g ()
-step = candidates >>= \n -> modifying mappings (S.|>n)
-
-candidates :: (Eq (GetLabel (NodeData g))) => ALG g Node
+candidates :: Graph g => Alg g l (PatternNode, GraphNode)
 candidates = do
     matcher <- popMatcher
     node <- availableSuccessors matcher
@@ -72,15 +51,16 @@ candidates = do
     guard (not nodeUsed)
 
     curLabel <- lookupLabel node
-    guard (curLabel == matcherLabel matcher)
+    comparator <- use tester
+    guard (curLabel `comparator` matcherLabel matcher)
 
     guardAll (checkConstraint node) (constraints matcher)
 
-    return node
+    return (source matcher, node)
   where guardAll predicate ls = guard . and =<< traverse predicate ls
 
 
-sample :: [a] -> ALG g a
+sample :: [a] -> Alg g l a
 sample ls = do
      gen <- use rng
      let (gen', gen'') = split gen
@@ -88,14 +68,14 @@ sample ls = do
      rng .= gen'
      liftLs ls'
      
-checkConstraint :: Node -> Constraint -> ALG g Bool
+checkConstraint :: Graph g => GraphNode -> Constraint -> Alg g l Bool
 checkConstraint node constraint = do
     g <- use graph
     case constraint of
-        (Degree n) -> return $ G.outdeg g node >= n
-        HasEdge other -> return $ G.hasEdge g (node, other)
+        (Degree n) -> return $ G.outdeg g (unGNode node) >= n
+        HasEdge other -> return $ G.hasEdge g (unGNode node, other)
 
-availableSuccessors :: Matcher g -> ALG g Node
+availableSuccessors :: Graph g => NodeMatcher l -> Alg g l GraphNode
 availableSuccessors matcher = do
     case parent matcher of
         Nothing -> allNodes
@@ -103,40 +83,37 @@ availableSuccessors matcher = do
           previous <- lookupMapping curParent
           neighbors previous
 
-checkDone :: Alg g Bool
+checkDone :: Alg g l Bool
 checkDone = uses matchers null
     
 -- TODO: Sort by outgoing edges to limit branching factor?
-allNodes :: ALG g Node
-allNodes = sample =<< use (graph . to G.nodes)
+allNodes :: Graph g => Alg g l GraphNode
+allNodes = sample =<< uses graph  (coerce . G.nodes)
 
-neighbors :: (Graph g) => Node -> Alg g Node
+neighbors :: (Graph g) => GraphNode -> Alg g l GraphNode
 neighbors node = do 
     curGraph <- use graph
-    sample $ (\(_, o, _) -> o) <$> G.out curGraph node
+    sample $ (\(_, o, _) -> GraphNode o) <$> G.out curGraph (unGNode node)
 
 
-lookupLabel :: Node -> ALG g (GetLabel (NodeData g))
+lookupLabel :: G.Graph g => GraphNode -> Alg (g n e) l n
 lookupLabel node = do
     curGraph <- use graph
-    case G.lab curGraph node of
-      Just dat -> return (dat ^. label)
+    case G.lab curGraph (unGNode node) of
+      Just d -> return (d)
       Nothing -> error "Graph node not found"
 
-
         
-popMatcher :: Alg g (Matcher g)
+popMatcher :: Alg g l (NodeMatcher l)
 popMatcher = do
     cur <- uses matchers head
     modifying matchers tail
     return cur
 
-lookupMapping :: Node -> Alg g Node
+lookupMapping :: PatternNode -> Alg g l GraphNode
 lookupMapping node = do
     curMappings <- use mappings
-    return (S.index curMappings node)
+    return (curMappings M.! node)
 
-isUsed :: Node -> Alg g Bool
-isUsed node = isJust . S.elemIndexL node <$> use mappings
-
-
+isUsed :: GraphNode -> Alg g l Bool
+isUsed node =  uses mappings (any (==node) . M.elems)

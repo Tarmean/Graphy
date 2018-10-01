@@ -15,34 +15,37 @@ import Control.Monad (when)
 
 import Types
 
-runMST :: (Graph g, IsUnweighted (NodeData g)) => (Node -> Node -> Double) -> (Node -> Double) -> g -> [Matcher g]
-runMST edgeWeight nodeWeight baseGraph = view matchers $ snd $ runMstMonad mst (addWeights edgeWeight nodeWeight baseGraph)
+type AnnotatedEdge g = G.LEdge (EdgeData g)
 
-mst :: MST g ()
+runMST :: (G.DynGraph g) => (Node -> Node -> Double) -> (g n e) -> [NodeMatcher n]
+runMST edgeWeight baseGraph = view matchers $ snd $ runMstMonad mst (addWeights edgeWeight baseGraph)
+
+mst :: (IsWeighted (EdgeData g), DynGraph g) => MstMonad g ()
 mst = do
     g <- use graph
     let nodeCount = length (G.nodes g)
-    getFirstEdge >>= addFirstEdge
+    if nodeCount == 0 then return ()
+    else getFirstEdge >>= addFirstEdge
     let loop = do
                 processedCount <- use (verts . to length)
                 when (processedCount /= nodeCount)
                    $ getSpanningEdge >>= addEdge >> loop
     loop
 
-getFirstEdge :: MST g (AnnotatedEdge g)
+getFirstEdge :: (IsWeighted (EdgeData g), Graph g) => MstMonad g (AnnotatedEdge g)
 getFirstEdge  = do
     curGraph <- use graph
     let allEdges = G.labEdges curGraph
     return (selectFirstEdge curGraph allEdges)
 
-selectFirstEdge :: (WeightedGraph g) => g -> [AnnotatedEdge g] -> AnnotatedEdge g
+selectFirstEdge :: (IsWeighted (EdgeData g), Graph g) => g -> [AnnotatedEdge g] -> AnnotatedEdge g
 selectFirstEdge g = F.minimumBy (O.comparing edgeWeight <> O.comparing combinedDeg)
  where
    edgeWeight = getWeight . G.edgeLabel
    combinedDeg (fromN, toN, _) = deg fromN + deg toN
    deg = G.outdeg g
 
-getSpanningEdge :: MST g (AnnotatedEdge g)
+getSpanningEdge :: (IsWeighted (EdgeData g), DynGraph g) => MstMonad g (AnnotatedEdge g)
 getSpanningEdge = do 
     curGraph <- use graph 
     seen <- use verts
@@ -51,7 +54,7 @@ getSpanningEdge = do
     then error "Error: Pattern has to be connected for QuickSI to work"
     else return (selectSpanningEdge curGraph seen candidateEdges)
 
-selectSpanningEdge :: (WeightedGraph g) => g -> S.Set Node -> [AnnotatedEdge g] -> AnnotatedEdge g 
+selectSpanningEdge :: (IsWeighted (EdgeData g), DynGraph g) => g -> S.Set Node -> [AnnotatedEdge g] -> AnnotatedEdge g 
 selectSpanningEdge g seen
     = F.minimumBy 
         (  O.comparing edgeWeight
@@ -71,7 +74,7 @@ adjacentNodes g seen = filter isNeighbor $ G.labEdges g
   where
     isNeighbor (fromN, toN, _) = fromN `S.member` seen && toN `S.notMember` seen
 
-makeFirstMatcher :: AnnotatedEdge g -> MST g (Matcher g)
+makeFirstMatcher :: (Graph g) => AnnotatedEdge g -> MstMonad g (Matcher g)
 makeFirstMatcher (fromN, _, _) = do
     g <- use graph
     l <- lookupLabel fromN
@@ -81,28 +84,28 @@ makeFirstMatcher (fromN, _, _) = do
         , constraints = addDegConstraint g fromN []
         , source = PatternNode fromN
         }
-makeMatcher :: AnnotatedEdge g -> MST g (Matcher g)
+makeMatcher :: (DynGraph g) => AnnotatedEdge g -> MstMonad g (Matcher g)
 makeMatcher (fromN, toN, _) = do
     g <- use graph
     missedEdges <- getMissedEdges toN
     let edgeConstraints = HasEdge <$> filter (/= fromN) missedEdges
     l <- lookupLabel toN
     return NodeMatcher
-           { parent = Just fromN 
+           { parent = Just (PatternNode fromN )
            , matcherLabel = l
            , constraints = addDegConstraint g toN edgeConstraints
            , source = PatternNode toN
            }
-lookupLabel :: Node -> MST g (GetLabel (NodeData g))
+lookupLabel :: (Graph g) => Node -> MstMonad g (NodeData g)
 lookupLabel n = do
     g <- use graph
     Just l <- return (G.lab g n)
-    return (l ^. label)
+    return (l)
 addDegConstraint :: Graph g => g -> Node -> ([Constraint] -> [Constraint])
 addDegConstraint g toN = if deg >= 3 then (Degree deg:) else id
   where deg = G.outdeg g toN
 
-getMissedEdges :: WeightedGraph g => G.Node -> MstMonad g [Node]
+getMissedEdges :: DynGraph g => G.Node -> MstMonad g [Node]
 getMissedEdges node = L.observeAllT $ do
     g <- lift (use graph)
     seen <- lift (use verts)
@@ -112,14 +115,14 @@ getMissedEdges node = L.observeAllT $ do
     return toN
             
     
-addFirstEdge :: AnnotatedEdge g -> MST g ()
+addFirstEdge :: (DynGraph g) => AnnotatedEdge g -> MstMonad g ()
 addFirstEdge e@(fromN, _, _) = do
     initialMatcher <- makeFirstMatcher e
     modifying matchers (initialMatcher:)
     modifying verts (S.insert fromN)
     addEdge e
 
-addEdge  :: AnnotatedEdge g -> MST g ()
+addEdge  :: (DynGraph g) => AnnotatedEdge g -> MstMonad g ()
 addEdge e@(fromN, toN, _label) = do
     modifying verts (S.insert toN)
     modifying edges (S.insert (fromN, toN))
@@ -127,15 +130,14 @@ addEdge e@(fromN, toN, _label) = do
     modifying matchers (++[matcher])
     return ()
 
-addWeights :: Graph g => (Node -> Node -> Double) -> (Node -> Double) -> g -> WithWeights g
-addWeights edgeWeight nodeWeight = G.gmap step
+addWeights :: G.DynGraph g => (Node -> Node -> Double) ->  g n e -> g n (Weighted e)
+addWeights edgeWeight = G.gmap step
   where
     step (inEdges, node, lbl, outEdges) =
         ( map (wInEdge node) inEdges
         , node
-        , wSelf node lbl
+        , lbl
         , map (wOutEdge node) outEdges
         )
     wInEdge node (lbl, other) = (Weighted (edgeWeight other node) lbl, other)
     wOutEdge node (lbl, other) = (Weighted (edgeWeight node other) lbl, other)
-    wSelf = Weighted . nodeWeight
