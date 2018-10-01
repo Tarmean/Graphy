@@ -12,6 +12,7 @@ import Control.Lens
 import qualified Control.Monad.Logic as L
 import Control.Monad.Logic (lift, guard)
 import Control.Monad (when)
+import Data.Coerce
 
 import Types
 
@@ -88,10 +89,10 @@ makeMatcher :: (DynGraph g) => AnnotatedEdge g -> MstMonad g (Matcher g)
 makeMatcher (fromN, toN, _) = do
     g <- use graph
     missedEdges <- getMissedEdges toN
-    let edgeConstraints = HasEdge <$> filter (/= fromN) missedEdges
+    let edgeConstraints = map HasEdge $ coerce $ filter (/= fromN) missedEdges
     l <- lookupLabel toN
     return NodeMatcher
-           { parent = Just (PatternNode fromN )
+           { parent = Just (PatternNode fromN)
            , matcherLabel = l
            , constraints = addDegConstraint g toN edgeConstraints
            , source = PatternNode toN

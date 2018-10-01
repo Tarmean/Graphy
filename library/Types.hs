@@ -31,8 +31,6 @@ instance Semigroup (Ann (Float, Float) ()) where
 instance Monoid (Ann (Float, Float) ()) where
     mempty = Ann (0,0) mempty
 makeFields ''Ann
-instance Eq b => Eq (Ann a b) where
-    Ann _ a == Ann _ b = a == b
 getAnn :: Ann a b -> a
 getAnn (Ann a _) = a
 type P b = Ann (Float, Float) b
@@ -55,7 +53,7 @@ data NodeMatcher a
     , source :: PatternNode
     }
     deriving (Eq, Show)
-data Constraint = Degree !Int | HasEdge !Node
+data Constraint = Degree !Int | HasEdge !PatternNode
   deriving (Eq, Show)
 
 data MstEnv g
@@ -76,9 +74,7 @@ data QuickSIEnv g l
     = QuickSIEnv
     { _quickSIEnvGraph :: g
     , _quickSIEnvMappings :: M.Map PatternNode GraphNode
-    , _quickSIEnvMatchers :: [NodeMatcher l]
     , _quickSIEnvRng :: StdGen
-    , _quickSIEnvTester :: NodeData g -> l -> Bool
     }
 makeFields ''QuickSIEnv
 newtype Alg g l a
@@ -160,7 +156,6 @@ data GenEnv g l
     { _genEnvRng :: StdGen
     , _genEnvMaxKey :: Int
     , _genEnvGraph :: g
-    , _genEnvTester :: (NodeData g) -> l -> Bool
     , _genEnvLiftLabel :: l -> ModifyMonad g l (NodeData g)
     }
 newtype GenMonad g l a = GenMonad { unGenMonad :: State (GenEnv g l) a }

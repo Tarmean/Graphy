@@ -21,7 +21,7 @@ main =  do
     gen <- getStdGen
     play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 (initialState gen) render processEvent stepTime
   where
-    foo gen g = runGenMonad gen g (\_ () -> True) placeNode $ do
+    foo gen g = runGenMonad gen g placeNode $ do
         G.empty .-> 1 * 2 + 3 * 2 + 4 * 3
         1 * 2 .-> 3 * (1+2) + 4 * (1+2)
         1 * 2 .-> 1 * 2 * 3
@@ -38,7 +38,7 @@ f :: G.Gr (P ()) b -> GenMonad (G.Gr (P ()) b) () () -> IO (G.Gr (P ())
  b)
 f g m = do
     gen <- getStdGen
-    return $ runGenMonad gen g (\_ () -> True) placeNode m
+    return $ runGenMonad gen g placeNode m
 processEvent :: (Graph g, NodeData g ~ P ()) => Event -> GlossState g -> GlossState g
 processEvent (EventKey (MouseButton LeftButton) Down Modifiers {} pos) state 
     | Just (node, _) <- findNode pos state

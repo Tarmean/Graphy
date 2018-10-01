@@ -18,9 +18,10 @@ import System.Random
 import Control.Monad.State (execState)
 import UnsafeNextGraphId
 import Data.Coerce
+import QuickSIClass
 
-runGenMonad :: StdGen -> Gr.Gr a b -> (a -> l -> Bool) -> (l -> ModifyMonad (Gr.Gr a b) l a) -> GenMonad (Gr.Gr a b) l () -> (Gr.Gr a b)
-runGenMonad gen g0 comparator lifter m = view graph $ execState (unGenMonad m) (GenEnv gen (unGNode $ nextId g0) g0 comparator lifter)
+runGenMonad :: StdGen -> Gr.Gr a b -> (l -> ModifyMonad (Gr.Gr a b) l a) -> GenMonad (Gr.Gr a b) l () -> (Gr.Gr a b)
+runGenMonad gen g0 lifter m = view graph $ execState (unGenMonad m) (GenEnv gen (unGNode $ nextId g0) g0 lifter)
 
 placeNode :: l -> ModifyMonad g l (P l)
 placeNode l = do
@@ -35,7 +36,7 @@ placeNode l = do
       return a
 
 infixr 1 .->
-(.->)  :: (Monoid n2, Monoid e, Ord e, Show n1, Show e) =>
+(.->)  :: (Monoid n2, Monoid e, Ord e, Show n1, Show e, MatchLabels n2 n1) =>
      Gr.Gr n1 e -> Gr.Gr n1 e -> GenMonad (Gr.Gr n2 e) n1 ()
 (.->) l r = rewriting l (removeMissing l r >> insert r)
 
@@ -67,15 +68,14 @@ getGen = do
     return gen'
 
 rewriting
-    :: (G.DynGraph g)
+    :: (G.DynGraph g, MatchLabels n2 n1)
     => g n1 e2 -> ModifyMonad (g n2 e2) n1  () -> GenMonad (g n2 e2) n1 ()
 rewriting p m = do
     gen <- getGen
     g <- use graph
-    comparator <- use tester
     k <- use maxKey
     let searchOrder = runMST (const . const 0) p
-        foundSubgraphIsos = runQuickSI gen comparator g searchOrder
+        foundSubgraphIsos = runQuickSI gen g searchOrder
     case foundSubgraphIsos of
         [] -> return ()
         (translation:_) -> do
