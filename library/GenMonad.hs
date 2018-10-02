@@ -2,7 +2,6 @@
 {-# Language FlexibleContexts #-}
 {-# Language ScopedTypeVariables #-}
 module GenMonad where
-import Control.Monad.State
 import TypeHacks
 
 import Types
@@ -15,12 +14,13 @@ import SpanningTree (runMST)
 import QuickSI (runQuickSI)
 import Control.Lens
 import System.Random
-import Control.Monad.State (execState)
+import Control.Monad.State (execState, runState)
 import UnsafeNextGraphId
 import Data.Coerce
 import QuickSIClass
+import Data.Function (on)
 
-runGenMonad :: StdGen -> Gr.Gr a b -> (l -> ModifyMonad (Gr.Gr a b) l a) -> GenMonad (Gr.Gr a b) l () -> (Gr.Gr a b)
+runGenMonad :: StdGen -> Gr.Gr a b -> (l -> ModifyMonad (Gr.Gr a b) l a) -> GenMonad (Gr.Gr a b) l () -> Gr.Gr a b
 runGenMonad gen g0 lifter m = view graph $ execState (unGenMonad m) (GenEnv gen (unGNode $ nextId g0) g0 lifter)
 
 placeNode :: l -> ModifyMonad g l (P l)
@@ -36,29 +36,31 @@ placeNode l = do
       return a
 
 infixr 1 .->
-(.->)  :: (Monoid n2, Monoid e, Ord e, Show n1, Show e, MatchLabels n2 n1) =>
+(.->)  :: (Monoid e, Semigroup n2, Ord e, MatchLabels n2 n1) =>
      Gr.Gr n1 e -> Gr.Gr n1 e -> GenMonad (Gr.Gr n2 e) n1 ()
 (.->) l r = rewriting l (removeMissing l r >> insert r)
 
 instance (Monoid m, Monoid n) => Num (Gr.Gr m n) where
     fromInteger n = G.mkGraph [(fromInteger n, mempty)] []
-    (*) a b = G.mkGraph nodesMerged (G.labEdges a ++ G.labEdges b ++ newEdges)
-      where
-        newEdges = concat [[(l, r, mempty), (r, l, mempty)] | (l,_) <- nodesLeft, (r,_) <- nodesRight]
-        nodesLeft = G.labNodes a
-        nodesRight = G.labNodes b
-        nodesMerged = M.toList $ M.fromList nodesLeft `merge` M.fromList nodesRight
-    (+) a b = G.mkGraph nodesMerged (G.labEdges a ++ G.labEdges b)
-      where
-        nodesLeft = G.labNodes a
-        nodesRight = G.labNodes b
-        nodesMerged = M.toList $ M.fromList nodesLeft `merge` M.fromList nodesRight
+    (*) a b = G.mkGraph (mergeNodes a b) (G.labEdges a ++ G.labEdges b ++ newEdges)
+      where newEdges = concat [[(l, r, mempty), (r, l, mempty)] | l<- G.nodes a, r <- G.nodes b]
+    (+) = graphMerge
     signum = const G.empty
     abs = id
     negate = id
 
-merge :: (Ord a, Monoid b) => M.Map a b -> M.Map a b -> M.Map a b
-merge = MS.merge MS.preserveMissing MS.preserveMissing $ MS.zipWithMatched (\_k x y -> x <> y)
+graphMerge :: (Semigroup a, G.Graph gr1, G.Graph gr2) => gr2 a b -> gr2 a b -> gr1 a b
+graphMerge a b = G.mkGraph (mergeNodes a b) (G.labEdges a ++ G.labEdges b)
+
+
+mergeNodes :: (Semigroup a, G.Graph g) => g a b -> g a b -> [(Node, a)]
+mergeNodes = M.toList .: merge `on` (M.fromList . G.labNodes)
+  where
+    (.:) = (.).(.)
+
+    merge :: (Ord a, Semigroup b) => M.Map a b -> M.Map a b -> M.Map a b
+    merge = MS.merge MS.preserveMissing MS.preserveMissing $ MS.zipWithMatched whisk
+    whisk _k x y = x <> y
 
 getGen :: GenMonad r l StdGen
 getGen = do
@@ -86,18 +88,18 @@ rewriting p m = do
           graph .= g'
           rng .= gen''
 
-insert :: (Monoid a, Monoid b) => Gr.Gr l b -> ModifyMonad (Gr.Gr a b) l ()
+insert :: (Semigroup a, Monoid b) => Gr.Gr l b -> ModifyMonad (Gr.Gr a b) l ()
 insert g = do
     g' <- mapGraph g
-    modifying graph (+ g')
+    modifying graph (`graphMerge` g')
 
 missingNodes :: Gr.Gr l b -> Gr.Gr l b -> [PatternNode]
 missingNodes lhs rhs = S.toList $ S.fromList (coerce $ G.nodes lhs) S.\\ S.fromList (coerce $ G.nodes rhs)
 
 missingEdges :: Ord b => Gr.Gr l b -> [(PatternNode, PatternNode, b)]
-missingEdges lhs = (coerce $ G.labEdges lhs)
+missingEdges lhs = coerce $ G.labEdges lhs
 
-removeMissing :: forall a l b. (Show l, Show b, Ord b) => Gr.Gr l b -> Gr.Gr l b -> ModifyMonad (Gr.Gr a b) l ()
+removeMissing :: forall a l b. (Ord b) => Gr.Gr l b -> Gr.Gr l b -> ModifyMonad (Gr.Gr a b) l ()
 removeMissing p r = do
     let
       e :: [(Node, Node, b)]
@@ -111,8 +113,8 @@ removeMissing p r = do
     modifying graph (\g -> foldr G.delLEdge g e'')
 
 
-mapGraph :: DynGraph g => (BaseGraph g l (EdgeData g)) -> ModifyMonad g l g
-mapGraph g0 = G.ufold (step) (pure G.empty) g0
+mapGraph :: DynGraph g => BaseGraph g l (EdgeData g) -> ModifyMonad g l g
+mapGraph = G.ufold step (pure G.empty)
   where step c g = (G.&) <$> translateContext c <*> g
 
 translateContext :: G.Context l (EdgeData g) -> ModifyMonad g l (G.Context (NodeData g) (EdgeData g))

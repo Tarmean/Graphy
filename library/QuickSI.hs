@@ -2,7 +2,6 @@
 {-# Language FlexibleContexts #-}
 {-# Language GADTs #-}
 {-# Language RankNTypes #-}
-{-# Language LambdaCase #-}
 
 module QuickSI where
 import qualified Data.Graph.Inductive as G
@@ -51,7 +50,7 @@ checkConstraint node (Degree n) = (>=n) <$> outDegree node
 checkConstraint node (HasEdge other) = hasEdge node =<< tryLookup other
 
 availableSuccessors :: (MonadQuickSI m, MonadGraph m) => NodeMatcher l -> m [GraphNode]
-availableSuccessors matcher = do
+availableSuccessors matcher =
     case parent matcher of
         Nothing -> allNodes
         Just curParent -> do

@@ -7,11 +7,11 @@ import Control.Lens
 import Graphics.Gloss.Data.Vector
 import qualified Graphics.Gloss.Data.Point.Arithmetic as V
 
-stepNodes :: G.DynGraph gr => Float -> gr (P ()) b  -> gr (P ()) b
+stepNodes :: G.DynGraph gr => Float -> gr (P l) b  -> gr (P l) b
 stepNodes delta g = G.gmap (\(p, v, l, s) -> (p, v, step v l, s)) g
   where step p = over ann (stepSingle g delta p)
 
-stepSingle :: G.Graph gr => gr (P ()) b -> Float -> G.Node -> Point -> Point
+stepSingle :: G.Graph gr => gr (P l) b -> Float -> G.Node -> Point -> Point
 stepSingle g delta point curPos
     = pushes V.+ pulls V.+ curPos
   where

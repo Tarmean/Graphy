@@ -16,17 +16,22 @@ import ForceDirectedGraphLayout
 import qualified Graphics.Gloss.Data.Point.Arithmetic as V
 import System.Random
 
+data Attrib = Treasure | Key Int | Lock Int | Encounter
+  deriving (Show, Eq)
 main :: IO ()
 main =  do
     gen <- getStdGen
     play (InWindow "Nice Window" (200, 200) (10, 10)) white 30 (initialState gen) render processEvent stepTime
   where
+    foo :: StdGen -> G.Gr (P [Attrib]) () -> G.Gr (P [Attrib]) ()
     foo gen g = runGenMonad gen g placeNode $ do
         G.empty .-> 1 * 2 + 3 * 2 + 4 * 3
-        1 * 2 .-> 3 * (1+2) + 4 * (1+2)
-        1 * 2 .-> 1 * 2 * 3
-        1 * 2 .-> 3 * (1+2) + 4 * (1+2)
-        1 * 2 + 2 * 3 .-> 1 * 2 * 3
+        1 .-> 2 `has` [Lock 1] * (1+3) + 4 * (1+3) +  4 `has` [Encounter, Lock 1]
+        -- 1 * 2 .-> 3 * (1+2) + 4 * (1+2)
+        -- 1 * 2 + 2 * 3 .-> 1 * 2 * 3
+    has :: G.DynGraph g => Int -> [l] -> g [l] e
+    has n l = ([], n, l, []) G.& G.empty
+
 
     initialState gen = over graph (foo gen) makeState
     render = drawState
@@ -34,12 +39,12 @@ main =  do
         = state & graph %~ stepNodes delta
                 & placeDraggedNode 
 
-f :: G.Gr (P ()) b -> GenMonad (G.Gr (P ()) b) () () -> IO (G.Gr (P ())
- b)
+f :: G.Gr (P l) b -> GenMonad (G.Gr (P l) b) l () -> IO (G.Gr (P l) b)
 f g m = do
     gen <- getStdGen
     return $ runGenMonad gen g placeNode m
-processEvent :: (Graph g, NodeData g ~ P ()) => Event -> GlossState g -> GlossState g
+
+processEvent :: (Graph g, NodeData g ~ P [Attrib]) => Event -> GlossState g -> GlossState g
 processEvent (EventKey (MouseButton LeftButton) Down Modifiers {} pos) state 
     | Just (node, _) <- findNode pos state
       = state & uiState .~ SClickedNode node pos
@@ -76,7 +81,7 @@ valV (x, y) = (x+y) / 100
 adjustPoint :: GlossState g -> Point -> Point
 adjustPoint state =  invertViewPort (state ^. viewPort)
 
-findNode :: G.Graph g => Vector -> GlossState (g (P ()) b) -> Maybe (G.Node, Float)
+findNode :: G.Graph g => Vector -> GlossState (g (P [Attrib]) b) -> Maybe (G.Node, Float)
 findNode pos state = find inCircle $ map labelDist candidates
   where
     adjustedPos = adjustPoint state pos
@@ -84,34 +89,34 @@ findNode pos state = find inCircle $ map labelDist candidates
     inCircle (_, dist) = dist <= 6
     candidates = state ^. graph . to G.labNodes
 
-makeState ::  GlossState (G.Gr (P ()) ())
+makeState ::  GlossState (G.Gr (P [Attrib]) ())
 makeState =  GlossState G.empty viewPortInit Nothing SBase
 
-drawState :: G.Graph g => GlossState (g (P ()) b) -> Picture
+drawState :: G.Graph g => GlossState (g (P [Attrib]) b) -> Picture
 drawState =  applyPort <*> drawNodes <> drawEdges -- check if this is too cute once i am less tired
   where applyPort = view $ viewPort . to applyViewPortToPicture
 
-drawNodes :: G.Graph g => GlossState (g (P ()) b) -> Picture
+drawNodes :: G.Graph g => GlossState (g (P [Attrib]) b) -> Picture
 drawNodes state = pictures [ draw node x y w | (node, w@(Ann (x, y) _)) <- state ^. graph . to G.labNodes ]
   where
     isSelected n = state ^. selected == Just n
     draw n x y w = translate x y  $ drawPoint (isSelected n) <> drawText w
 
-drawEdges :: (G.Graph g) => GlossState (g (P ()) b) -> Picture
+drawEdges :: (G.Graph g) => GlossState (g (P [Attrib]) b) -> Picture
 drawEdges g = pictures [ drawEdge g l r | (l, r) <- g ^. graph . to G.edges]
 
 
 drawText :: Show s => s -> Picture
 drawText w = translate 7 (-1) $ scale 0.1 0.1 $ text (show w)
 drawPoint :: Bool -> Picture
-drawPoint isSelected = (colored nodePic)
+drawPoint isSelected = colored nodePic
    where
      nodePic = ThickCircle 3 6
      colored
        | isSelected = color red
        | otherwise = id
 
-drawEdge :: G.Graph g => GlossState (g (P ()) b) -> G.Node -> G.Node -> Picture
+drawEdge :: G.Graph g => GlossState (g (P [Attrib]) b) -> G.Node -> G.Node -> Picture
 drawEdge g = drawLine `on` getPos (g ^. graph)
 
 drawLine :: Point -> Point -> Picture

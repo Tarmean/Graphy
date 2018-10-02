@@ -26,10 +26,8 @@ data Ann a b = Ann
   }
 instance Show b => Show (Ann a  b) where
     show (Ann _ b) = show b
-instance Semigroup (Ann (Float, Float) ()) where
-    Ann l1 r1 <> Ann l2 r2 = Ann (l1) (r1 <> r2)
-instance Monoid (Ann (Float, Float) ()) where
-    mempty = Ann (0,0) mempty
+instance Semigroup a => Semigroup (Ann (Float, Float) a) where
+    Ann l1 r1 <> Ann l2 r2 = Ann l1 (r1 <> r2)
 makeFields ''Ann
 getAnn :: Ann a b -> a
 getAnn (Ann a _) = a
@@ -121,7 +119,7 @@ newtype PatchAlg g a
     { unPatch :: State (RewriteEnv g) a
     } deriving (Monad, Functor, Applicative, MonadState (RewriteEnv g))
 
-getPos :: G.Graph g => g (P ()) b -> G.Node -> (Float, Float)
+getPos :: G.Graph g => g (P l) b -> G.Node -> (Float, Float)
 getPos g p = case G.lab g p of
     Nothing -> error "Point unknown"
     Just (Ann r _) -> r

@@ -26,7 +26,7 @@ class (MonadGraph m, MNode m ~ GraphNode, Monad m, Alternative m) => MonadQuickS
     branch :: [a] -> m a
 instance (MatchLabels a l, G.Graph g) => MonadQuickSI (Alg (g a b) l) where
     type MatchLabel (Alg (g a b) l) = l
-    isUsed node =  uses mappings (any (==node) . M.elems)
+    isUsed node =  uses mappings (elem node . M.elems)
     tryLookup node = do
         curMappings <- use mappings
         return (curMappings M.! node)
