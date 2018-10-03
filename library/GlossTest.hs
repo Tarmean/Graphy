@@ -9,14 +9,14 @@ import Graphics.Gloss.Data.ViewPort
 import qualified Data.Graph.Inductive as G
 import Data.Function
 import Graphics.Gloss.Data.Vector
-import Graphics.Gloss.Interface.Pure.Game
+import Graphics.Gloss.Interface.Pure.Game as I
 import Control.Lens
 import GenMonad (runGenMonad, placeNode, (.->))
 import ForceDirectedGraphLayout
 import qualified Graphics.Gloss.Data.Point.Arithmetic as V
 import System.Random
 
-data Attrib = Treasure | Key Int | Lock Int | Encounter
+data Attrib = Treasure | Key | Lock | Encounter | Shop | Traps | Monsters | Start | End
   deriving (Show, Eq)
 main :: IO ()
 main =  do
@@ -25,9 +25,17 @@ main =  do
   where
     foo :: StdGen -> G.Gr (P [Attrib]) () -> G.Gr (P [Attrib]) ()
     foo gen g = runGenMonad gen g placeNode $ do
-        G.empty .-> 1 * 2 + 3 * 2 + 4 * 3
-        1 .-> 2 `has` [Lock 1] * (1+3) + 4 * (1+3) +  4 `has` [Encounter, Lock 1]
-        -- 1 * 2 .-> 3 * (1+2) + 4 * (1+2)
+        G.empty .-> 1 `has` [Start] * 2 + 3 * 2 + 4 `has` [End]* 3 
+        1 .-> 1 * (2+3)
+            + 4 `has` [Treasure] * (2+3)
+            + 2 * 5 `has` [Lock]
+            + 3 `has` [Encounter] * 6 `has` [Key]
+            + 5 * 6
+        1 * 2 + 2 * 3 .-> 1 * 2 + 2 * 3 + 2 * 4 `has` [Shop]
+        1 * 2 .-> 1 * (3 + 4)
+                + 2 * (3 + 4)
+                + 3 `has` [Monsters]
+                + 4 `has` [Traps]
         -- 1 * 2 + 2 * 3 .-> 1 * 2 * 3
     has :: G.DynGraph g => Int -> [l] -> g [l] e
     has n l = ([], n, l, []) G.& G.empty
@@ -97,10 +105,10 @@ drawState =  applyPort <*> drawNodes <> drawEdges -- check if this is too cute o
   where applyPort = view $ viewPort . to applyViewPortToPicture
 
 drawNodes :: G.Graph g => GlossState (g (P [Attrib]) b) -> Picture
-drawNodes state = pictures [ draw node x y w | (node, w@(Ann (x, y) _)) <- state ^. graph . to G.labNodes ]
+drawNodes state = pictures [ draw  w | w <- state ^. graph . to G.labNodes ]
   where
     isSelected n = state ^. selected == Just n
-    draw n x y w = translate x y  $ drawPoint (isSelected n) <> drawText w
+    draw (n,  Ann (x, y) l) = translate x y  $ drawPoint (isSelected n) l <> drawText l
 
 drawEdges :: (G.Graph g) => GlossState (g (P [Attrib]) b) -> Picture
 drawEdges g = pictures [ drawEdge g l r | (l, r) <- g ^. graph . to G.edges]
@@ -108,19 +116,34 @@ drawEdges g = pictures [ drawEdge g l r | (l, r) <- g ^. graph . to G.edges]
 
 drawText :: Show s => s -> Picture
 drawText w = translate 7 (-1) $ scale 0.1 0.1 $ text (show w)
-drawPoint :: Bool -> Picture
-drawPoint isSelected = colored nodePic
+drawPoint :: Bool -> [Attrib] -> Picture
+drawPoint isSelected ls = colored nodePic
    where
      nodePic = ThickCircle 3 6
      colored
        | isSelected = color red
+       | any isMeta ls = color (greyN 0.8)
        | otherwise = id
 
-drawEdge :: G.Graph g => GlossState (g (P [Attrib]) b) -> G.Node -> G.Node -> Picture
-drawEdge g = drawLine `on` getPos (g ^. graph)
+isMeta :: Attrib -> Bool
+isMeta k = k == Key || k == Lock
 
-drawLine :: Point -> Point -> Picture
-drawLine l r =  line [l, r]
+drawEdge :: G.Graph g => GlossState (g (P [Attrib]) b) -> G.Node -> G.Node -> Picture
+drawEdge g n1 n2 = drawLine (toPos n1) (toPos n2) (style n1 n2)
+  where
+    toPos = getPos (g^. graph)
+    style = (||) `on` any isMeta . getLabel
+    getLabel n
+      | Just (Ann _ l) <- G.lab (g ^. graph) n = l
+      | otherwise = error "Unknown node"
+
+
+drawLine :: Point -> Point -> Bool -> Picture
+drawLine l r b =  col $ line [l, r]
+  where
+    col
+      | b = color (greyN 0.6)
+      | otherwise = id
 
 
 placeDraggedNode :: (G.DynGraph g, HasAnn n Point) => GlossState (g n e) -> GlossState (g n e)
